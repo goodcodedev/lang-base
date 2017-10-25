@@ -1,0 +1,8 @@
+#
+# lang-base
+#
+---
+exports:
+  header-dirs: [ . ]
+  modules:
+    lang-base: .
