@@ -20,7 +20,8 @@ enum PartType {
     PFLOAT,
     PENUM,
     PAST,
-    PLIST
+    PLIST,
+    PTOKEN
 };
 class TypedPart {
 public:
@@ -33,6 +34,11 @@ public:
     bool operator!=(const TypedPart &other) {
         return !(*this == other);
     }
+};
+class TypedPartToken {
+public:
+    TypedPartToken(std::string identifier)
+        : TypedPart(PTOKEN, identifier) {}
 };
 class TypedPartPrim {
 public:
@@ -79,9 +85,19 @@ public:
     std::string enumName;
 };
 
+class ListInit : public RuleAction {
+public:
+    TypedPart *type;
+    ListInit(TypedPart *type) : type(type) {}
+};
+
 class ListPush : public RuleAction {
 public:
-    std::string astClass;
+    int listNum;
+    int elemNum;
+    TypedPart *type;
+    ListPush(int listNum, int elemNum, TypedPart *type)
+        : listNum(listNum), elemNum(elemNum), type(type) {}
 };
 
 class GrammarRule {
@@ -131,14 +147,16 @@ public:
 
 class AstClassConstructor {
 public:
-    std::vector<AstClassMember*> args;
+    std::vector<std::string> args;
 };
 
 class AstClass {
 public:
+    std::string identifier;
     std::string extends;
     std::map<std::string, AstClassMember*> members;
     std::vector<AstClassConstructor*> constructors;
+    std::set<std::string> subClasses;
     AstClass() {}
     void ensureMember(TypedPart *typedPart) {
         if (members.count(typedPart->identifier) == 0) {
@@ -158,6 +176,12 @@ public:
     std::map<std::string, ListGrammarType> listGrammarTypes;
     std::map<std::string, AstClass> astClasses;
     LangData() {
+    }
+    AstClass* ensureClass(std::string className) {
+        if (astClasses.count(className) == 0) {
+            astClasses.emplace(className, AstClass());
+        }
+        return &astClasses[className];
     }
 };
 
@@ -226,6 +250,8 @@ public:
                 part->identifier,
                 langData->listGrammarTypes[part->identifier]->type
             )
+        } else if (langData->tokenData.count(part->identifier) != 0) {
+            return new TypedPartToken(part->identifier);
         } else {
             return NULL;
         }
@@ -249,13 +275,152 @@ public:
         // Go through defs and collect rules, ensure ast classes
         // has needed members and constructors
         for (AstDef* astDef : *node->nodes) {
+            AstClass *defClass = NULL;
+            // Defs may have an identifier, this would refer
+            // to a subclass of the baseClass or another ast
+            // rule.
+            if (astDef->identifier.compare("") != 0) {
+                // Check for other ast rule
+                if (langData->astGrammarTypes.count(astDef->identifier) != 0) {
+                    // Ensure referred rules class is registered
+                    // as subclass of base class.
+                    baseAstClass->subClasses.insert(
+                        langData->astGrammarTypes[astDef->identifier].className
+                    );
+                    // Rest should be handled when processing
+                    // referred rule.
+                    continue;
+                }
+                // We have (probably) a subclass
+                if (astDef->identifier.compare(baseAstClass->identifier) != 0) {
+                    defClass = langData->ensureClass(astDef->identifier);
+                } else {
+                    defClass = baseAstClass;
+                }
+            } else {
+                defClass = baseAstClass;
+            }
             GrammarRule *curRule = new GrammarRule();
-            if (astDef->identifier.compare("") == 0) {
-                for (AstPart *part : *astDef->nodes) {
-                    TypedPart *typedPart = getTypedPart(part);
-
+            // Collect constructor args
+            std::vector<RuleArg> ruleArgs;
+            int num = 0;
+            std::vector<std::string> tokenList;
+            for (AstPart *part : *astDef->nodes) {
+                ++num;
+                TypedPart *typedPart = getTypedPart(part);
+                tokenList.push_back(typedPart->identifier);
+                if (typedPart->type == PTOKEN || typedPart == nullptr) {
+                    // Skip const literal tokens
+                    continue;
+                }
+                // Ensure ast class member
+                if (defClass->members.count(typedPart->identifier) != 0) {
+                    if (defClass->members[typedPart->identifier]->type != typedPart) {
+                        // Member has different type
+                        printf("Member has different type");
+                        exit(1);
+                    }
+                } else {
+                    defClass->members.emplace(
+                        typedPart->identifier,
+                        AstClassMember(typedPart)
+                    );
+                }
+                // Add rule arg
+                ruleArgs.push_back(RuleArg(num, typedPart));
+            }
+            // Ensure ast class constructor
+            bool constructorFound = false;
+            for (AstClassConstructor *constr : *defClass->constructors) {
+                if (constr->size() == ruleArgs.size()) {
+                    // Do simple equality check.
+                    // Concievably we could try to reorder, but
+                    // that could also lead to more volatility
+                    // in available constructors
+                    // Perhaps when the ast interface is defined,
+                    // reorder could be tried.
+                    bool isEqual = true;
+                    for (int i = 0; i < constr->size(); ++i) {
+                        if (*constr->args[i]->typedPart != ruleArgs[i].typedPart) {
+                            isEqual = false;
+                            break;
+                        }
+                    }
+                    if (isEqual) {
+                        constructorFound = true;
+                        break;
+                    }
                 }
             }
+            if (!constructorFound) {
+                // Create constructor based on ruleArgs
+                AstClassConstructor constr;
+                for (RuleArg *ruleArg : ruleArgs) {
+                    constr.args.push_back(ruleArg->identifier);
+                }
+                defClass->constructors.push_back(constr);
+            }
+            // Add rule to grammar type
+            curRule->tokenList = tokenList;
+            curRule->action = new AstConstruction(
+                defClass->identifier,
+                ruleArgs
+            );
+            curGrammarType->rules.push_back(curRule);
+        }
+    }
+    void visitList(ListNode *node) {
+        ListGrammarType *grammarType = ListGrammarType();
+        TypedPart *typed1 = getTypedPart(node->astKey);
+        TypedPart *typed2 = getTypedPart(node->tokenSep);
+        if (typed1 == nullptr ||typed2 == nullptr) {
+            printf("List key not found");
+            exit(1);
+        }
+        // Separator between or at end
+        TypedPart *listType;
+        TypedPart *sepToken;
+        bool sepBetween;
+        if (typed1->type == PTOKEN) {
+            sepBetween = true;
+            sepToken = typed1;
+            listType = typed2;
+        } else {
+            sepBetween = false;
+            sepToken = typed2;
+            listType = typed1;
+        }
+        grammarType->type = typedPart;
+        // Init list
+        GrammarRule *initRule = new GrammarRule();
+        initRule->tokenList = new std::vector<std::string>;
+        initRule->action = new ListInit(typedPart);
+        grammarType->rules->push_back(initRule);
+        if (sepBetween) {
+            GrammarRule *firstPart;
+            firstPart->tokenList = new std::vector<std::string>{
+                node->identifier,
+                listType->identifier
+            };
+            firstPart->action = new ListPush(1, 2, listType);
+            grammarType->rules->push_back(firstPart);
+            GrammarRule *sepPart;
+            sepPart->tokenList = new std::vector<std::string>{
+                node->identifier,
+                sepToken->identifier,
+                listType->identifier
+            };
+            sepPart->action = new ListPush(1, 3, listType);
+            grammarType->rules->push_back(sepPart);
+        } else {
+            GrammarRule *sepPart;
+            sepPart->tokenList = new std::vector<std::string>{
+                node->identifier,
+                listType->identifier,
+                sepToken->identifier
+            };
+            sepPart->action = new ListPush(1, 2, listType);
+            grammarType->rules->push_back(sepPart);
         }
     }
 };
