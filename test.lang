@@ -1,5 +1,5 @@
-token identifier "[_a-zA-Z][0-9_a-zA-Z]*"
-token intConst "[1-9][0-9]*"
+token <string> identifier "[_a-zA-Z][0-9_a-zA-Z]*"
+token <int> intConst "[1-9][0-9]*"
 token LEFT_PAREN "\("
 token RIGHT_PAREN "\)"
 token LEFT_BRACE "\{"
@@ -9,8 +9,8 @@ enum Type {
     INT "int"
 }
 ast Function (Type identifier LEFT_PAREN argExprs RIGHT_PAREN LEFT_BRACE statements RIGHT_BRACE)
-list argExprs expr COMMA
+ast IntExpr (intConst)
 ast expr:Expression {
     IntExpr
 }
-ast IntExpr (intConst)
+list argExprs expr COMMA

@@ -25,10 +25,17 @@ token { return TOKEN; }
 enum { return ENUM; }
 ast { return AST; }
 list { return LIST; }
+string {return TOKEN_STRING; }
+int {return TOKEN_INT; }
+float {return TOKEN_FLOAT; }
 \{ { return LEFT_BRACE; }
 \} { return RIGHT_BRACE; }
+\( { return LEFT_PAREN; }
+\) { return RIGHT_PAREN; }
 \, { return COMMA; }
 \: { return COLON; }
+\< { return LBRACKET; }
+\> { return RBRACKET; }
 {identifier} { yylval.sval = __strdup(yytext); return IDENTIFIER; }
 \"(\\.|[^"\\])*\" { yylval.sval = __strdup(yytext); return STRING; }
 

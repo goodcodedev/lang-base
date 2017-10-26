@@ -6,19 +6,14 @@ if (NOT FIPS_IMPORT)
     fips_project(lang-base)
 endif()
 
-fips_begin_module(lang-base)
+fips_begin_app(lang-base cmdline)
     include_directories(.)
+    fips_files(lang-test.cpp)
     fips_files(
         lex.yy.cpp descr.tab.h descr.tab.cpp
-        DescrNode.hpp
+        DescrNode.hpp DescrVisitor.hpp
+        LangData.hpp
     )
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPROJECT_ROOT=\\\"${FIPS_PROJECT_DIR}\\\"")
-fips_end_module()
-
-fips_begin_app(lang-test cmdline)
-    fips_vs_warning_level(3)
-    fips_files(lang-test.cpp)
-    fips_deps(lang-base)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DPROJECT_ROOT=\\\"${FIPS_PROJECT_DIR}\\\"")
 fips_end_app()
 

@@ -40,12 +40,18 @@ extern int yylineno;
 %token RIGHT_BRACE
 %token LEFT_PAREN
 %token RIGHT_PAREN
+%token LBRACKET
+%token RBRACKET
 %token COMMA
 %token COLON
 %token <sval> STRING
+%token TOKEN_STRING
+%token TOKEN_INT
+%token TOKEN_FLOAT
 
-%type <ast> source token enum enum_decl ast ast_def ast_part list
+%type <ast> source token_decl enum_def enum_decl ast ast_def ast_part list type_decl
 %type <vector> nodes enum_decls ast_defs ast_parts
+%type <enm> tokenType
 
 %%
 source: nodes { result = new SourceNode(reinterpret_cast<std::vector<DescrNode*>*>($1)); }
@@ -54,28 +60,42 @@ source: nodes { result = new SourceNode(reinterpret_cast<std::vector<DescrNode*>
 nodes: /* empty */ {
         $$ = new std::vector<DescrNode*>;
     }
-    | nodes token { $$ = push_node<DescrNode>($1, $2); }
-    | nodes enum { $$ = push_node<DescrNode>($1, $2); }
+    | nodes token_decl { $$ = push_node<DescrNode>($1, $2); }
+    | nodes enum_def { $$ = push_node<DescrNode>($1, $2); }
     | nodes ast { $$ = push_node<DescrNode>($1, $2); }
     | nodes list { $$ = push_node<DescrNode>($1, $2); }
     ;
 
-token: TOKEN IDENTIFIER STRING {
-    $$ = new TokenNode($2, $3);
-}
-enum: ENUM IDENTIFIER LEFT_BRACE enum_decls RIGHT_BRACE;
-enum_decls: /* empty */ {
-        $$ = new std::vector<EnumDecl*>;
+tokenType: TOKEN_STRING { $$ = TSTRING; }
+        | TOKEN_INT { $$ = TINT; }
+        | TOKEN_FLOAT { $$ = TFLOAT; }
+        ;
+
+token_decl: TOKEN IDENTIFIER STRING {
+        $$ = new TokenNode($2, $3);
     }
-    | enum_decls enum_decl { $$ = push_node<EnumDecl>($1, $2); }
-    | enum_decls COMMA enum_decl { $$ = push_node<EnumDecl>($1, $3); }
+    | TOKEN LBRACKET tokenType RBRACKET IDENTIFIER STRING {
+        $$ = new TokenNode(static_cast<TokenType>($3), $5, $6);
+    }
     ;
-enum_decl: IDENTIFIER STRING { $$ = new EnumDecl($1, $2); }
-ast: AST IDENTIFIER LEFT_PAREN ast_def RIGHT_PAREN { 
-        $$ = new AstNode($2, new std::vector<AstDef*>({reinterpret_cast<AstDef*>($4)}));
+enum_def: ENUM type_decl LEFT_BRACE enum_decls RIGHT_BRACE { 
+      $$ = new EnumNode(re<TypeDecl>($2), reinterpret_cast<std::vector<EnumDeclNode*>*>($4)); 
+    };
+enum_decls: /* empty */ {
+        $$ = new std::vector<EnumDeclNode*>;
+    }
+    | enum_decls enum_decl { $$ = push_node<EnumDeclNode>($1, $2); }
+    | enum_decls COMMA enum_decl { $$ = push_node<EnumDeclNode>($1, $3); }
+    ;
+enum_decl: IDENTIFIER STRING { $$ = new EnumDeclNode($1, $2); }
+type_decl: IDENTIFIER { $$ = new TypeDecl($1); }
+            | IDENTIFIER COLON IDENTIFIER { $$ = new TypeDecl($3, $1); }
+            ;
+ast: AST type_decl LEFT_PAREN ast_parts RIGHT_PAREN { 
+        $$ = new AstNode(re<TypeDecl>($2), new std::vector<AstDef*>({new AstDef("", reinterpret_cast<std::vector<AstPart*>*>($4))}));
      }
-    | AST IDENTIFIER COLON IDENTIFIER LEFT_PAREN ast_defs RIGHT_PAREN {
-        $$ = new AstNode($2, $4, $6);
+    | AST type_decl LEFT_BRACE ast_defs RIGHT_BRACE {
+        $$ = new AstNode(re<TypeDecl>($2), reinterpret_cast<std::vector<AstDef*>*>($4));
     }
     ;
 ast_defs: /* empty */ {
@@ -84,11 +104,11 @@ ast_defs: /* empty */ {
     | ast_defs ast_def { $$ = push_node<AstDef>($1, $2); }
     | ast_defs COMMA ast_def { $$ = push_node<AstDef>($1, $3); }
     ;
-ast_def: IDENTIFIER ast_parts { $$ = new AstDef(reinterpret_cast<std::vector<AstPart*>*>($2)); };
+ast_def: IDENTIFIER ast_parts { $$ = new AstDef($1, reinterpret_cast<std::vector<AstPart*>*>($2)); };
 ast_parts: /* empty */ {
         $$ = new std::vector<AstPart*>;
     }
-    | ast_def ast_part { $$ = push_node<AstPart>($1, $2); }
+    | ast_parts ast_part { $$ = push_node<AstPart>($1, re<AstPart>($2)); }
     ;
 
 ast_part: IDENTIFIER { $$ = new AstPart($1); };

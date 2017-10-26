@@ -1,10 +1,11 @@
 #include "DescrNode.hpp"
+#include "LangData.hpp"
 
 extern FILE *yyin;
 extern int yyparse();
 extern DescrNode *result; 
 
-DescrNode* parseFile(std::string fileName) {
+SourceNode* parseFile(std::string fileName) {
     FILE *sourceFile;
     errno = 0;
 #ifdef _WIN32
@@ -23,10 +24,13 @@ DescrNode* parseFile(std::string fileName) {
 	//std::string str; 
 	//result->toStringF(&str, new FormatState());
 	//fprintf(stdout, str.c_str());
-	return result;
+	return static_cast<SourceNode*>(result);
 }
 
 int main() {
-    auto result = parseFile(std::string(PROJECT_ROOT) + "/test.lang");
+	auto result = parseFile(std::string(PROJECT_ROOT) + "/test.lang");
+	auto langData = new LangData();
+	auto visit = new BuildLangDataVisitor(langData);
+	visit->visitSource(result);
     return 0;
 }

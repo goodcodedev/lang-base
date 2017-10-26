@@ -48,9 +48,14 @@
      RIGHT_BRACE = 264,
      LEFT_PAREN = 265,
      RIGHT_PAREN = 266,
-     COMMA = 267,
-     COLON = 268,
-     STRING = 269
+     LBRACKET = 267,
+     RBRACKET = 268,
+     COMMA = 269,
+     COLON = 270,
+     STRING = 271,
+     TOKEN_STRING = 272,
+     TOKEN_INT = 273,
+     TOKEN_FLOAT = 274
    };
 #endif
 /* Tokens.  */
@@ -63,9 +68,14 @@
 #define RIGHT_BRACE 264
 #define LEFT_PAREN 265
 #define RIGHT_PAREN 266
-#define COMMA 267
-#define COLON 268
-#define STRING 269
+#define LBRACKET 267
+#define RBRACKET 268
+#define COMMA 269
+#define COLON 270
+#define STRING 271
+#define TOKEN_STRING 272
+#define TOKEN_INT 273
+#define TOKEN_FLOAT 274
 
 
 
@@ -82,7 +92,7 @@ typedef union YYSTYPE
 	int enm;
 }
 /* Line 1529 of yacc.c.  */
-#line 86 "../descr.tab.h"
+#line 96 "../descr.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
