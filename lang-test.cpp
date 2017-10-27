@@ -41,5 +41,11 @@ int main() {
 	listVisit->visitSource(result);
 	rulesVisit->visitSource(result);
 	astVisit->visitSource(result);
+	SourceGenerator *sourceGen = new SourceGenerator(langData);
+	sourceGen->generateLexFile();
+	sourceGen->generateGrammarFile();
+	sourceGen->generateAstClasses();
+	sourceGen->generateVisitor();
+	sourceGen->generateTransformer();
     return 0;
 }

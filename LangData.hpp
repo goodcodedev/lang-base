@@ -5,6 +5,8 @@
 #include <map>
 #include <set>
 #include <queue>
+#include <iostream>
+#include <fstream>
 
 namespace LangData {
 
@@ -40,6 +42,8 @@ enum PartType {
     PTOKEN
 };
 
+class LData;
+
 /**
  * Grammar rule part with derived type information.
  * Tagged with any of PartType enum
@@ -59,6 +63,8 @@ public:
     bool operator!=(const TypedPart &other) {
         return !(*this == other);
     }
+    virtual void generateGrammarVal(string *str, int num, LData *langData) = 0;
+    virtual void generateGrammarType(string *str, LData *langData) = 0;
 };
 
 // Token part
@@ -66,19 +72,26 @@ class TypedPartToken : public TypedPart {
 public:
     TypedPartToken(string identifier)
         : TypedPart(PTOKEN, identifier) {}
+    void generateGrammarVal(string *str, int num, LData *langData);
+    void generateGrammarType(string *str, LData *langData);
 };
 // Prim token part
 class TypedPartPrim : public TypedPart {
 public:
     TypedPartPrim(PartType type, string identifier)
         : TypedPart(type, identifier) {}
+    void generateGrammarVal(string *str, int num, LData *langData);
+    void generateGrammarType(string *str, LData *langData);
 };
 // Enum part
+// These are stored as integers
 class TypedPartEnum : public TypedPart {
 public:
     string enumKey;
     TypedPartEnum(string identifier, string enumKey) 
         : TypedPart(PENUM, identifier), enumKey(enumKey) {}
+    void generateGrammarVal(string *str, int num, LData *langData);
+    void generateGrammarType(string *str, LData *langData);
 };
 // Ast part
 class TypedPartAst : public TypedPart {
@@ -86,6 +99,8 @@ public:
     string astClass;
     TypedPartAst(string identifier, string astClass) 
         : TypedPart(PAST, identifier), astClass(astClass) {}
+    void generateGrammarVal(string *str, int num, LData *langData);
+    void generateGrammarType(string *str, LData *langData);
 };
 // List part
 class TypedPartList : public TypedPart {
@@ -94,6 +109,8 @@ public:
     TypedPart *type;
     TypedPartList(string identifier, TypedPart *type) 
         : TypedPart(PLIST, identifier), type(type) {}
+    void generateGrammarVal(string *str, int num, LData *langData);
+    void generateGrammarType(string *str, LData *langData);
 };
 
 /**
@@ -110,6 +127,8 @@ class RuleAction {
 public:
     RuleActionType type;
     RuleAction(RuleActionType type) : type(type) {}
+    virtual void generateGrammar(string *str, LData *langData);
+    virtual void generateGrammarVal(string *str, LData *langData) = 0;
 };
 
 /**
@@ -133,6 +152,7 @@ public:
     AstConstructionAction(string astClass) : RuleAction(RAAstConstruction), astClass(astClass)  {}
     AstConstructionAction(string astClass, vector<RuleArg> args)
         : RuleAction(RAAstConstruction), astClass(astClass), args(args) {}
+    void generateGrammarVal(string *str, LData *langData);
 };
 
 /**
@@ -144,6 +164,7 @@ public:
     int num;
     TypedPart *ref;
     RefAction(int num, TypedPart *ref) : RuleAction(RARef), num(num), ref(ref) {}
+    void generateGrammarVal(string *str, LData *langData);
 };
 
 /**
@@ -153,6 +174,7 @@ class EnumValueAction : public RuleAction {
 public:
     string enumMember;
     EnumValueAction(string enumMember) : RuleAction(RAEnumValue), enumMember(enumMember) {}
+    void generateGrammarVal(string *str, LData *langData);
 };
 
 /**
@@ -162,6 +184,7 @@ class ListInitAction : public RuleAction {
 public:
     TypedPart *type;
     ListInitAction(TypedPart *type) : RuleAction(RAListInit), type(type) {}
+    void generateGrammarVal(string *str, LData *langData);
 };
 
 /**
@@ -174,6 +197,8 @@ public:
     TypedPart *type;
     ListPushAction(int listNum, int elemNum, TypedPart *type)
         : RuleAction(RAListPush), listNum(listNum), elemNum(elemNum), type(type) {}
+    void generateGrammar(string *str, LData *langData);
+    void generateGrammarVal(string *str, LData *langData);
 };
 
 /**
@@ -187,40 +212,43 @@ public:
     vector<string> tokenList;
     RuleAction *action;
     GrammarRule() {}
+    void generateGrammar(string *str, LData *langData);
+};
+
+class GrammarType {
+public:
+    string key;
+    vector<GrammarRule*> rules;
+    GrammarType(string key) : key(key) {}
+    void generateGrammar(string *str, LData *langData);
 };
 
 /**
  * Grammar type returning an ast object.
  */
-class AstGrammarType {
+class AstGrammarType : public GrammarType {
 public:
-    string key;
     string astClass;
-    vector<GrammarRule*> rules;
-    AstGrammarType(string key) : key(key) {}
+    AstGrammarType(string key) : GrammarType(key) {}
 };
 
 /**
  * Grammar type returning a list
  */
-class ListGrammarType {
+class ListGrammarType : public GrammarType {
 public:
-    string key;
     // Little mismatch to represent all and nested types
     TypedPart *type;
-    vector<GrammarRule*> rules;
-    ListGrammarType(string key) : key(key) {}
+    ListGrammarType(string key) : GrammarType(key) {}
 };
 
 /**
  * Grammar type returning enum element
  */
-class EnumGrammarType {
+class EnumGrammarType : public GrammarType {
 public:
-    string key;
     string enumKey;
-    vector<GrammarRule*> rules;
-    EnumGrammarType(string key) : key(key) {}
+    EnumGrammarType(string key) : GrammarType(key) {}
 };
 
 /**
@@ -298,106 +326,252 @@ public:
     // Some built in tokens provided
     // from identifier
     // Returns nullptr when not found.
-    TokenData* getBuiltInToken(string identifier) {
-        if (identifier == "LPAREN") return new TokenData(NONE, "LPAREN", "\\(");
-        if (identifier == "RPAREN") return new TokenData(NONE, "RPAREN", "\\)");
-        if (identifier == "LBRACE") return new TokenData(NONE, "LBRACE", "\\{");
-        if (identifier == "RBRACE") return new TokenData(NONE, "RBRACE", "\\}");
-        if (identifier == "COMMA") return new TokenData(NONE, "COMMA", "\\,");
-        if (identifier == "intConst") return new TokenData(TINT, "intConst", "[1-9][0-9]*");
-        if (identifier == "identifier") return new TokenData(TSTRING, "identifier", "[_a-zA-Z][0-9_a-zA-Z]*");
-        return nullptr;
-    }
+    TokenData* getBuiltInToken(string identifier);
     // Add built in token or fail
-    void addBuiltInToken(string identifier) {
-        // Check for built in
-        TokenData *builtIn = getBuiltInToken(identifier);
-        if (builtIn == nullptr) {
-            printf("Key not found: %s\n", identifier.c_str());
-            exit(1);
-        }
-        // Add built in token
-        tokenData.emplace(identifier, builtIn);
-    }
-    AstClass* ensureClass(string className) {
-        if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass(className));
-        return astClasses[className];
-    }
-    AstEnum* ensureEnum(string typeName) {
-        if (!enums.count(typeName)) enums.emplace(typeName, new AstEnum(typeName));
-        return enums[typeName];
-    }
-    EnumGrammarType* ensureEnumGrammar(string key) {
-        if (!enumGrammarTypes.count(key)) enumGrammarTypes.emplace(key, new EnumGrammarType(key));
-        return enumGrammarTypes[key];
-    }
-    AstGrammarType* ensureAstGrammar(string key) {
-        if (!astGrammarTypes.count(key)) astGrammarTypes.emplace(key, new AstGrammarType(key));
-        return astGrammarTypes[key];
-    }
-    ListGrammarType* ensureListGrammar(string key) {
-        if (!listGrammarTypes.count(key)) listGrammarTypes.emplace(key, new ListGrammarType(key));
-        return listGrammarTypes[key];
-    }
+    void addBuiltInToken(string identifier);
+    AstClass* ensureClass(string className);
+    AstEnum* ensureEnum(string typeName);
+    EnumGrammarType* ensureEnumGrammar(string key);
+    AstGrammarType* ensureAstGrammar(string key);
+    ListGrammarType* ensureListGrammar(string key);
     // Ensures sub relationsship, and returns the subclass.
     // Will check for equality and just return base class
     // if equal.
-    AstClass* ensureSubRelation(string baseClass, string subClass) {
-        AstClass *base = ensureClass(baseClass);
-        if (subClass == baseClass) {
-            return base;
-        } else {
-            AstClass *sub = ensureClass(subClass);
-            if (sub->extends != "" && sub->extends != baseClass) {
-                printf("Todo, handle different base");
-                exit(1);
-            }
-            sub->extends = baseClass;
-            base->subClasses.insert(subClass);
-            return sub;
-        }
-    }
-    TypedPart* getTypedPart(string identifier) {
-        // Check token
-        if (tokenData.count(identifier) != 0) {
-            TokenData *tokenRef = tokenData[identifier];
-            switch (tokenRef->type) {
-                case NONE:
-                return new TypedPartToken(identifier);
-                break;
-                case TSTRING:
-                return new TypedPartPrim(PSTRING, identifier);
-                break;
-                case TINT:
-                return new TypedPartPrim(PINT, identifier);
-                break;
-                case TFLOAT:
-                return new TypedPartPrim(PFLOAT, identifier);
-                break;
-            }
-        } else if (enumGrammarTypes.count(identifier) != 0) {
-            EnumGrammarType *enumData = enumGrammarTypes[identifier];
-            return new TypedPartEnum(identifier, enumData->enumKey);
-        } else if (astGrammarTypes.count(identifier) != 0) {
-            return new TypedPartAst(
-                identifier,
-                astGrammarTypes[identifier]->astClass
-            );
-        } else if (listGrammarTypes.count(identifier) != 0) {
-            return new TypedPartList(
-                identifier,
-                listGrammarTypes[identifier]->type
-            );
-        } else if (tokenData.count(identifier) != 0) {
-            return new TypedPartToken(identifier);
-        } else {
-            return nullptr;
-        }
-    }
-    string keyFromTypeDecl(TypeDecl *typeDecl) {
-        return (typeDecl->alias.compare("") != 0) ? typeDecl->alias : typeDecl->identifier;
-    }
+    AstClass* ensureSubRelation(string baseClass, string subClass);
+    TypedPart* getTypedPart(string identifier);
+    string keyFromTypeDecl(TypeDecl *typeDecl);
 };
+
+void TypedPartToken::generateGrammarVal(string *str, int num, LData *langData) {
+    // Its not normal to pass a token,
+    // but it could be useful to pass a constant
+    // when matching something for example.
+    // It is passed as the string
+    // that was set up with the token key
+    if (langData->tokenData.count(identifier) == 0) {
+        printf("Token not found");
+        exit(1);
+    }
+    *str += "\"" + langData->tokenData[identifier]->regex + "\"";
+}
+void TypedPartToken::generateGrammarType(string *str, LData *langData) {
+    *str += "std::string";
+}
+
+void TypedPartPrim::generateGrammarVal(string *str, int num, LData *langData) {
+    *str += "$" + std::to_string(num);
+}
+void TypedPartPrim::generateGrammarType(string *str, LData *langData) {
+    switch (type) {
+        case PSTRING:
+        *str += "std::string";
+        break;
+        case PINT:
+        *str += "int";
+        break;
+        case PFLOAT:
+        *str += "double";
+        break;
+        default:
+        *str += "UNRECOGNIZED PRIM TYPE";
+    }
+}
+
+void TypedPartEnum::generateGrammarVal(string *str, int num, LData *langData) {
+    *str += "static_cast<" + enumKey + ">($" + std::to_string(num) + ")";
+}
+void TypedPartEnum::generateGrammarType(string *str, LData *langData) {
+    *str += enumKey;
+}
+
+void TypedPartAst::generateGrammarVal(string *str, int num, LData *langData) {
+    *str += "reinterpret_cast<" + astClass + "*>($" + std::to_string(num) + ")";
+}
+void TypedPartAst::generateGrammarType(string *str, LData *langData) {
+    *str += astClass + "*";
+}
+
+void TypedPartList::generateGrammarVal(string *str, int num, LData *langData) {
+    *str += "reinterpret_cast<";
+    generateGrammarType(str, langData);
+    *str += ">($" + std::to_string(num) + ")";
+}
+void TypedPartList::generateGrammarType(string *str, LData *langData) {
+    *str += "std::vector<";
+    type->generateGrammarType(str, langData);
+    *str += ">";
+}
+
+void RuleAction::generateGrammar(string *str, LData *langData) {
+    *str += "$$ = ";
+    generateGrammarVal(str, langData);
+    *str += ";";
+}
+
+void AstConstructionAction::generateGrammarVal(string *str, LData *langData) {
+    *str += "new " + astClass + "(";
+    bool isFirst = true;
+    for (RuleArg &arg : args) {
+        if (!isFirst) *str += ", ";
+        arg.typedPart->generateGrammarVal(str, arg.num, langData);
+        isFirst = false;
+    }
+    *str += ")";
+}
+
+void RefAction::generateGrammarVal(string *str, LData *langData) {
+    *str += "$" + std::to_string(num);
+}
+
+void EnumValueAction::generateGrammarVal(string *str, LData *langData) {
+    *str += enumMember;
+}
+
+void ListInitAction::generateGrammarVal(string *str, LData *langData) {
+    *str += "new std::vector<";
+    type->generateGrammarType(str, langData);
+    *str += ">";
+}
+
+void ListPushAction::generateGrammar(string *str, LData *langData) {
+    // Reinterpret as list type to "vec" variable
+    type->generateGrammarType(str, langData);
+    *str += " vec = reinterpret_cast<";
+    type->generateGrammarType(str, langData);
+    *str += ">($" + std::to_string(listNum) + ");";
+    // Push back element
+    *str += "vec->push_back(";
+    type->generateGrammarVal(str, elemNum, langData);
+    *str += ");";
+    *str += "$$ = ";
+    generateGrammarVal(str, langData);
+    *str += ";";
+};
+void ListPushAction::generateGrammarVal(string *str, LData *langData) {
+    *str += "vec";
+}
+
+void GrammarRule::generateGrammar(string *str, LData *langData) {
+    for (string token : tokenList) {
+        *str += " " + token;
+    }
+    *str += " { ";
+    action->generateGrammar(str, langData);
+    *str += " }";
+}
+
+void GrammarType::generateGrammar(string *str, LData *langData) {
+    *str += key + ": ";
+    bool isFirst = true;
+    for (GrammarRule *rule : rules) {
+        if (!isFirst) *str += "\n    |";
+        rule->generateGrammar(str, langData);
+        isFirst = false;
+    }
+    *str += "\n    ;\n";
+}
+
+// LData definitions
+
+TokenData* LData::getBuiltInToken(string identifier) {
+    if (identifier == "LPAREN") return new TokenData(NONE, "LPAREN", "\\(");
+    if (identifier == "RPAREN") return new TokenData(NONE, "RPAREN", "\\)");
+    if (identifier == "LBRACE") return new TokenData(NONE, "LBRACE", "\\{");
+    if (identifier == "RBRACE") return new TokenData(NONE, "RBRACE", "\\}");
+    if (identifier == "COMMA") return new TokenData(NONE, "COMMA", "\\,");
+    if (identifier == "intConst") return new TokenData(TINT, "intConst", "[1-9][0-9]*");
+    if (identifier == "identifier") return new TokenData(TSTRING, "identifier", "[_a-zA-Z][0-9_a-zA-Z]*");
+    return nullptr;
+}
+// Add built in token or fail
+void LData::addBuiltInToken(string identifier) {
+    // Check for built in
+    TokenData *builtIn = getBuiltInToken(identifier);
+    if (builtIn == nullptr) {
+        printf("Key not found: %s\n", identifier.c_str());
+        exit(1);
+    }
+    // Add built in token
+    tokenData.emplace(identifier, builtIn);
+}
+AstClass* LData::ensureClass(string className) {
+    if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass(className));
+    return astClasses[className];
+}
+AstEnum* LData::ensureEnum(string typeName) {
+    if (!enums.count(typeName)) enums.emplace(typeName, new AstEnum(typeName));
+    return enums[typeName];
+}
+EnumGrammarType* LData::ensureEnumGrammar(string key) {
+    if (!enumGrammarTypes.count(key)) enumGrammarTypes.emplace(key, new EnumGrammarType(key));
+    return enumGrammarTypes[key];
+}
+AstGrammarType* LData::ensureAstGrammar(string key) {
+    if (!astGrammarTypes.count(key)) astGrammarTypes.emplace(key, new AstGrammarType(key));
+    return astGrammarTypes[key];
+}
+ListGrammarType* LData::ensureListGrammar(string key) {
+    if (!listGrammarTypes.count(key)) listGrammarTypes.emplace(key, new ListGrammarType(key));
+    return listGrammarTypes[key];
+}
+// Ensures sub relationsship, and returns the subclass.
+// Will check for equality and just return base class
+// if equal.
+AstClass* LData::ensureSubRelation(string baseClass, string subClass) {
+    AstClass *base = ensureClass(baseClass);
+    if (subClass == baseClass) {
+        return base;
+    } else {
+        AstClass *sub = ensureClass(subClass);
+        if (sub->extends != "" && sub->extends != baseClass) {
+            printf("Todo, handle different base");
+            exit(1);
+        }
+        sub->extends = baseClass;
+        base->subClasses.insert(subClass);
+        return sub;
+    }
+}
+TypedPart* LData::getTypedPart(string identifier) {
+    // Check token
+    if (tokenData.count(identifier) != 0) {
+        TokenData *tokenRef = tokenData[identifier];
+        switch (tokenRef->type) {
+            case NONE:
+            return new TypedPartToken(identifier);
+            break;
+            case TSTRING:
+            return new TypedPartPrim(PSTRING, identifier);
+            break;
+            case TINT:
+            return new TypedPartPrim(PINT, identifier);
+            break;
+            case TFLOAT:
+            return new TypedPartPrim(PFLOAT, identifier);
+            break;
+        }
+    } else if (enumGrammarTypes.count(identifier) != 0) {
+        EnumGrammarType *enumData = enumGrammarTypes[identifier];
+        return new TypedPartEnum(identifier, enumData->enumKey);
+    } else if (astGrammarTypes.count(identifier) != 0) {
+        return new TypedPartAst(
+            identifier,
+            astGrammarTypes[identifier]->astClass
+        );
+    } else if (listGrammarTypes.count(identifier) != 0) {
+        return new TypedPartList(
+            identifier,
+            listGrammarTypes[identifier]->type
+        );
+    } else if (tokenData.count(identifier) != 0) {
+        return new TypedPartToken(identifier);
+    } else {
+        return nullptr;
+    }
+}
+string LData::keyFromTypeDecl(TypeDecl *typeDecl) {
+    return (typeDecl->alias.compare("") != 0) ? typeDecl->alias : typeDecl->identifier;
+}
 
 /**
  * Pass to register keys so they are ready when
@@ -791,6 +965,132 @@ public:
             }
         }
     }
+};
+
+class SourceGenerator {
+public:
+    LData *langData;
+    SourceGenerator(LData *langData) : langData(langData) {}
+    // Generate flex file
+    void generateLexFile() {
+        string str = "";
+        str +=  "%{\n";
+
+        str +=  "#define register // Deprecated in c++11\n"
+                "#ifdef _WIN32\n"
+                "   #define __strdup _strdup\n"
+                "#else\n"
+                "   #define __strdup strdup\n"
+                "#endif\n"
+                "%}\n"
+                "%option yylineno\n"
+                "%%\n";
+        for (auto const &pair : langData->tokenData) {
+            TokenData *token = pair.second;
+            switch (token->type) {
+                case NONE:
+                str += token->regex + " { return " + token->key + "; }\n";
+                break;
+                case TINT:
+                str += token->regex + " { yylval.ival = atoi(yytext); return " + token->key + "; }\n";
+                break;
+                case TSTRING:
+                str += token->regex + " { yylval.sval = __strdup(yytext); return " + token->key + "; }\n";
+                break;
+                case TFLOAT:
+                str += token->regex + " { yylval.fval = atof(yytext); return " + token->key + "; }\n";
+                break;
+            }
+        }
+        str +=  "%%\n"
+                "int yywrap() { return 1; }\n";
+        std::ofstream lexFile;
+        lexFile.open(std::string(PROJECT_ROOT) + "/test-lang.l");
+        lexFile << str;
+        lexFile.close();
+        printf("%s", str.c_str());
+    }
+    // Generate bison grammar
+    void generateGrammarFile() {
+        string str = "";
+        str +=  "%{\n"
+                "#include <stdio.h>\n";
+        str +=  "extern FILE *yyin;\n"
+                "void yyerror(const char *s);\n"
+                "extern int yylex(void);\n"
+                "extern int yylineno;\n"
+                "%}\n";
+        // Union
+        str +=  "%union {\n"
+                "   void *ptr;\n";
+        for (TokenType ttype : langData->tokenTypes) {
+            switch (ttype) {
+                case TINT: str += "    int ival;\n"; break;
+                case TSTRING: str += "    char *sval;\n"; break;
+                case TFLOAT: str += "    double fval;\n"; break;
+                case NONE: break;
+            }
+        }
+        str += "}\n";
+        // Tokens
+        for (auto const &pair : langData->tokenData) {
+            TokenData *token = pair.second;
+            switch (token->type) {
+                case NONE: str += "%token " + token->key + "\n"; break;
+                case TINT: str += "%token <ival> " + token->key + "\n"; break;
+                case TSTRING: str += "%token <sval> " + token->key + "\n"; break;
+                case TFLOAT: str += "%token <fval> " + token->key + "\n"; break;
+            }
+        }
+        // Types
+        // Enums goes to ival
+        if (langData->enumGrammarTypes.size() > 0) {
+            str += "%type <ival> ";
+            for (auto const &pair : langData->enumGrammarTypes) {
+                EnumGrammarType *enumGrammar = pair.second;
+                str += enumGrammar->key + " ";
+            }
+            str += "\n";
+        }
+        // Ast and list goes to ptr
+        if (langData->astGrammarTypes.size() > 0 || langData->listGrammarTypes.size() > 0) {
+            str += "%type <ptr> ";
+            for (auto const &pair : langData->astGrammarTypes) {
+                AstGrammarType *astGrammar = pair.second;
+                str += astGrammar->key + " ";
+            }
+            for (auto const &pair : langData->listGrammarTypes) {
+                ListGrammarType *listGrammar = pair.second;
+                str += listGrammar->key + " ";
+            }
+            str += "\n";
+        }
+        str += "%%\n";
+        // Add rules
+        for (auto const &grammar : langData->enumGrammarTypes) {
+            grammar.second->generateGrammar(&str, langData);
+        }
+        for (auto const &grammar : langData->astGrammarTypes) {
+            grammar.second->generateGrammar(&str, langData);
+        }
+        for (auto const &grammar : langData->listGrammarTypes) {
+            grammar.second->generateGrammar(&str, langData);
+        }
+        std::ofstream grammarFile;
+        grammarFile.open(std::string(PROJECT_ROOT) + "/test-lang.y");
+        grammarFile << str;
+        grammarFile.close();
+
+        printf("%s", str.c_str());
+    }
+    // Generate c++ classes, enums etc
+    void generateAstClasses() {
+
+    }
+    void generateVisitor() {
+
+    }
+    void generateTransformer(){}
 };
 
 }
