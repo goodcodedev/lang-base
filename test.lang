@@ -4,13 +4,14 @@ token LEFT_PAREN "\("
 token RIGHT_PAREN "\)"
 token LEFT_BRACE "\{"
 token RIGHT_BRACE "\}"
+token COMMA "\,"
 enum Type {
     VOID "void",
     INT "int"
 }
-ast Function (Type identifier LEFT_PAREN argExprs RIGHT_PAREN LEFT_BRACE statements RIGHT_BRACE)
+ast Function (Type identifier LEFT_PAREN argExprs RIGHT_PAREN LEFT_BRACE RIGHT_BRACE)
 ast IntExpr (intConst)
 ast expr:Expression {
     IntExpr
 }
-list argExpr expr COMMA
+list argExprs expr COMMA

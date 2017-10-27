@@ -12,6 +12,7 @@ using std::vector;
 using std::string;
 using std::map;
 using std::set;
+using std::queue;
 
 /**
  * Represents a token with key, regex and
@@ -47,9 +48,9 @@ class TypedPart {
 public:
     PartType type;
     string identifier;
-    PartTypeBase(ParType type, string identifier) : type(type), identifier(identifier) {}
+    TypedPart(PartType type, string identifier) : type(type), identifier(identifier) {}
     bool operator==(const TypedPart &other) {
-        return (other->type == this->type && other->identifier.compare(this->identifier) == 0);
+        return (other.type == this->type && other.identifier.compare(this->identifier) == 0);
     }
     bool operator!=(const TypedPart &other) {
         return !(*this == other);
@@ -57,33 +58,33 @@ public:
 };
 
 // Token part
-class TypedPartToken {
+class TypedPartToken : public TypedPart {
 public:
     TypedPartToken(string identifier)
         : TypedPart(PTOKEN, identifier) {}
 };
 // Prim token part
-class TypedPartPrim {
+class TypedPartPrim : public TypedPart {
 public:
     TypedPartPrim(PartType type, string identifier)
         : TypedPart(type, identifier) {}
 };
 // Enum part
-class TypedPartEnum {
+class TypedPartEnum : public TypedPart {
 public:
     string enumKey;
     TypedPartEnum(string identifier, string enumKey) 
         : TypedPart(PENUM, identifier), enumKey(enumKey) {}
 };
 // Ast part
-class TypedPartAst {
+class TypedPartAst : public TypedPart {
 public:
     string astClass;
     TypedPartAst(string identifier, string astClass) 
         : TypedPart(PAST, identifier), astClass(astClass) {}
 };
 // List part
-class TypedPartList {
+class TypedPartList : public TypedPart {
 public:
     // Little mismatch to represent all and nested types
     TypedPart *type;
@@ -104,7 +105,7 @@ class RuleArg {
 public:
     int num;
     TypedPart *typedPart;
-    RuleArg(int num, TypedPart *typePart) : num(num), typedPart(typedPart) {}
+    RuleArg(int num, TypedPart *typedPart) : num(num), typedPart(typedPart) {}
 };
 
 /**
@@ -115,6 +116,8 @@ public:
     string astClass;
     vector<RuleArg> args;
     AstConstructionAction(string astClass) : astClass(astClass) {}
+    AstConstructionAction(string astClass, vector<RuleArg> args)
+        : astClass(astClass), args(args) {}
 };
 
 /**
@@ -200,9 +203,9 @@ public:
 class AstEnumMember {
 public:
     string name;
-    string string;
-    AstEnumMember(string name, string string) 
-        : name(name), string(string) {}
+    string value;
+    AstEnumMember(string name, string value) 
+        : name(name), value(value) {}
 };
 
 /**
@@ -230,6 +233,7 @@ public:
 class AstClassConstructor {
 public:
     vector<string> args;
+    AstClassConstructor() {}
 };
 
 /**
@@ -255,7 +259,7 @@ public:
 /**
  * Central object for lang data.
  */
-class LangData {
+class LData {
 public:
     map<string, TokenData*> tokenData;
     map<string, AstEnum*> enums;
@@ -264,7 +268,7 @@ public:
     map<string, ListGrammarType*> listGrammarTypes;
     map<string, EnumGrammarType*> enumGrammarTypes;
     map<string, AstClass*> astClasses;
-    LangData() {}
+    LData() {}
     AstClass* ensureClass(string className) {
         if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass());
         return astClasses[className];
@@ -274,50 +278,50 @@ public:
         return enums[typeName];
     }
     EnumGrammarType* ensureEnumGrammar(string key) {
-        if (!enumGrammarTypes.count(key)) enumGrammarTypes.emplace(key, new AstGrammarType(key));
+        if (!enumGrammarTypes.count(key)) enumGrammarTypes.emplace(key, new EnumGrammarType(key));
         return enumGrammarTypes[key];
     }
     AstGrammarType* ensureAstGrammar(string key) {
-        if (!astGrammarTypes.count(key)) enums.emplace(key, new AstGrammarType(key));
+        if (!astGrammarTypes.count(key)) astGrammarTypes.emplace(key, new AstGrammarType(key));
         return astGrammarTypes[key];
     }
     ListGrammarType* ensureListGrammar(string key) {
         if (!listGrammarTypes.count(key)) listGrammarTypes.emplace(key, new ListGrammarType(key));
         return listGrammarTypes[key];
     }
-    TypedPart* getTypedPart(AstPart *astPart) {
+    TypedPart* getTypedPart(string identifier) {
         // Check token
-        if (tokenData.count(part->identifier) != 0) {
-            TokenData *tokenRef = tokenData[part->identifier];
+        if (tokenData.count(identifier) != 0) {
+            TokenData *tokenRef = tokenData[identifier];
             switch (tokenRef->type) {
                 case NONE:
-                return new TypedPartToken(part->identifier);
+                return new TypedPartToken(identifier);
                 break;
                 case TSTRING:
-                return new TypedPartPrim(PSTRING, part->identifier);
+                return new TypedPartPrim(PSTRING, identifier);
                 break;
                 case TINT:
-                return new TypedPartPrim(PINT, part->identifier);
+                return new TypedPartPrim(PINT, identifier);
                 break;
                 case TFLOAT:
-                return new TypedPartPrim(PFLOAT, part->identifier);
+                return new TypedPartPrim(PFLOAT, identifier);
                 break;
             }
-        } else if (enums.count(part->identifier) != 0) {
-            AstEnum *enumData = enums[part->identifier];
-            return new TypedPartEnum(part->identifier, enumData->name);
-        } else if (astGrammarTypes.count(part->identifier) != 0) {
+        } else if (enumGrammarTypes.count(identifier) != 0) {
+            EnumGrammarType *enumData = enumGrammarTypes[identifier];
+            return new TypedPartEnum(identifier, enumData->enumKey);
+        } else if (astGrammarTypes.count(identifier) != 0) {
             return new TypedPartAst(
-                part->identifier,
-                astGrammarTypes[part->identifier]->astClass
-            )
-        } else if (listGrammarTypes.count(part->identifier) != 0) {
+                identifier,
+                astGrammarTypes[identifier]->astClass
+            );
+        } else if (listGrammarTypes.count(identifier) != 0) {
             return new TypedPartList(
-                part->identifier,
-                listGrammarTypes[part->identifier]->type
-            )
-        } else if (tokenData.count(part->identifier) != 0) {
-            return new TypedPartToken(part->identifier);
+                identifier,
+                listGrammarTypes[identifier]->type
+            );
+        } else if (tokenData.count(identifier) != 0) {
+            return new TypedPartToken(identifier);
         } else {
             return nullptr;
         }
@@ -338,8 +342,8 @@ public:
  */
 class RegisterKeysVisitor : public DescrVisitor {
 public:
-    LangData *langData;
-    RegisterKeysVisitor(LangData *langData) : langData(langData) {}
+    LData *langData;
+    RegisterKeysVisitor(LData *langData) : langData(langData) {}
     void visitToken(TokenNode *node) {
         langData->tokenData.emplace(node->identifier, new TokenData(
             node->type,
@@ -365,7 +369,7 @@ public:
     // by default though. An enum would perhaps
     // sometimes be good.
     void visitEnumDecl(EnumDeclNode *node) {
-        langData->tokenData->emplace(node->identifier, new TokenData(
+        langData->tokenData.emplace(node->identifier, new TokenData(
             NONE,
             node->identifier,
             node->regex
@@ -383,7 +387,7 @@ public:
     void visitList(ListNode *node) {
         // Just register grammar on key,
         // type is set at later stage
-        ListGrammarType *grammarType =  langData->ensureListGrammar(node->identifier);
+        langData->ensureListGrammar(node->identifier);
     }
 };
 
@@ -395,9 +399,9 @@ public:
  */
 class RegisterListKeysVisitor : public DescrVisitor {
 public:
-    LangData *langData;
-    queue<ListNode>  unresolved;
-    RegisterKeysVisitor(LangData *langData) : langData(langData) {}
+    LData *langData;
+    queue<ListNode*> unresolved;
+    RegisterListKeysVisitor(LData *langData) : langData(langData) {}
 
     // Runs visitList until there are no more
     // lists in queue, or loop is detected.
@@ -405,7 +409,7 @@ public:
         DescrVisitor::visitSource(node);
         if (unresolved.size() > 0) {
             size_t prevSize = unresolved.size();
-            int numTimesEqual = 0;
+            size_t numTimesEqual = 0;
             while (unresolved.size() > 0) {
                 visitList(unresolved.front());
                 unresolved.pop();
@@ -415,8 +419,9 @@ public:
                     // as there are members in the queue.
                     if (numTimesEqual >= unresolved.size()) {
                         printf("Loop detected in lists\n");
-                        for (ListNode *listNode : unresolved) {
-                            printf("List: %s\n", listNode->identifier);
+                        while (!unresolved.empty()) {
+                            printf("List: %s\n", unresolved.front()->identifier.c_str());
+                            unresolved.pop();
                         }
                         exit(1);
                     }
@@ -441,7 +446,7 @@ public:
             sepBetween = true;
             sepToken = typed1;
             listType = typed2;
-        } else if (typed2->type == PTOKEN {
+        } else if (typed2->type == PTOKEN) {
             sepBetween = false;
             sepToken = typed2;
             listType = typed1;
@@ -460,15 +465,15 @@ public:
         }
         grammarType->type = listType;
     }
-}
+};
 class BuildRulesVisitor : public DescrVisitor {
 public:
-    LangData *langData;
-    BuildLangDataVisitor(LangData *langData) : langData(langData) {}
+    LData *langData;
+    BuildRulesVisitor(LData *langData) : langData(langData) {}
     void visitEnum(EnumNode *node) {
         // Build rules
         string grammarKey = langData->keyFromTypeDecl(node->typeDecl);
-        EnumGrammarType *grammarType = langData->ensureAstGrammar(grammarKey);
+        EnumGrammarType *grammarType = langData->ensureEnumGrammar(grammarKey);
         // Enums are one of several token values
         for (EnumDeclNode *enumDecl : *node->nodes) {
             GrammarRule *rule = new GrammarRule();
@@ -495,7 +500,7 @@ public:
                 // Check for other ast rule
                 if (langData->astGrammarTypes.count(astDef->identifier) != 0) {
                     // Get class name from other type
-                    defClass = langData->astGrammarTypes[astDef]->identifier;
+                    defClass = langData->astGrammarTypes[astDef->identifier]->astClass;
                 }
             }
             GrammarRule *curRule = new GrammarRule();
@@ -505,7 +510,11 @@ public:
             vector<string> tokenList;
             for (AstPart *part : *astDef->nodes) {
                 ++num;
-                TypedPart *typedPart = langData->getTypedPart(part);
+                TypedPart *typedPart = langData->getTypedPart(part->identifier);
+                if (typedPart == nullptr) {
+                    printf("Key not found: %s\n", part->identifier.c_str());
+                    exit(1);
+                }
                 tokenList.push_back(typedPart->identifier);
                 if (typedPart->type == PTOKEN || typedPart == nullptr) {
                     // Skip const literal tokens
@@ -517,14 +526,14 @@ public:
             // Add rule to grammar type
             curRule->tokenList = tokenList;
             curRule->action = new AstConstructionAction(
-                defClass->identifier,
+                defClass,
                 ruleArgs
             );
             grammar->rules.push_back(curRule);
         }
     }
     void visitList(ListNode *node) {
-        ListGrammarType *grammar = ListGrammarType();
+        ListGrammarType *grammar = langData->ensureListGrammar(node->identifier);
         TypedPart *typed1 = langData->getTypedPart(node->astKey);
         TypedPart *typed2 = langData->getTypedPart(node->tokenSep);
         if (typed1 == nullptr ||typed2 == nullptr) {
@@ -544,42 +553,44 @@ public:
             sepToken = typed2;
             listType = typed1;
         }
-        grammar->type = typedPart;
+        grammar->type = listType;
         // Init list
         GrammarRule *initRule = new GrammarRule();
-        initRule->tokenList = new vector<string>;
-        initRule->action = new ListInitAction(typedPart);
-        grammar->rules->push_back(initRule);
+        initRule->action = new ListInitAction(listType);
+        grammar->rules.push_back(initRule);
         if (sepBetween) {
-            GrammarRule *firstPart;
-            firstPart->tokenList = new vector<string>{
+            GrammarRule *firstPart = new GrammarRule();
+            firstPart->tokenList = vector<string>{
                 node->identifier,
                 listType->identifier
             };
             firstPart->action = new ListPushAction(1, 2, listType);
-            grammar->rules->push_back(firstPart);
-            GrammarRule *sepPart;
-            sepPart->tokenList = new vector<string>{
+            grammar->rules.push_back(firstPart);
+            GrammarRule *sepPart = new GrammarRule();
+            sepPart->tokenList = vector<string>{
                 node->identifier,
                 sepToken->identifier,
                 listType->identifier
             };
             sepPart->action = new ListPushAction(1, 3, listType);
-            grammar->rules->push_back(sepPart);
+            grammar->rules.push_back(sepPart);
         } else {
-            GrammarRule *sepPart;
-            sepPart->tokenList = new vector<string>{
+            GrammarRule *sepPart = new GrammarRule();
+            sepPart->tokenList = vector<string>{
                 node->identifier,
                 listType->identifier,
                 sepToken->identifier
             };
             sepPart->action = new ListPushAction(1, 2, listType);
-            grammar->rules->push_back(sepPart);
+            grammar->rules.push_back(sepPart);
         }
     }
 };
 
 class BuildAstVisitor : public DescrVisitor {
+public:
+    LData *langData;
+    BuildAstVisitor(LData *langData) : langData(langData) {}
     void visitEnum(EnumNode *node) {
         AstEnum* astEnum = langData->ensureEnum(node->typeDecl->identifier);
         for (EnumDeclNode *enumDecl : *node->nodes) {
@@ -596,10 +607,10 @@ class BuildAstVisitor : public DescrVisitor {
         AstClass *baseAstClass = langData->ensureClass(baseAstName);
         // Go through rules and ensure ast classes
         // has needed members and constructors
-        for (GrammarRule *rule : *grammar->rule) {
-            AstConstructionAction *action = static_cast<AstConstructionAction>(rule->action);
+        for (GrammarRule *rule : grammar->rules) {
+            AstConstructionAction *action = static_cast<AstConstructionAction*>(rule->action);
             AstClass *ruleClass;
-            if (action->astClass != baseAstClass) {
+            if (action->astClass != baseAstName) {
                 ruleClass = langData->ensureClass(action->astClass);
                 // Ensure subclass extends base class and
                 // subclass registered as child
@@ -607,30 +618,31 @@ class BuildAstVisitor : public DescrVisitor {
                     printf("Todo, handle different base");
                     exit(1);
                 }
-                ruleClass->extends = baseAstClass;
-                baseAstClass->subClasses->insert(action->astClass);
+                ruleClass->extends = baseAstName;
+                baseAstClass->subClasses.insert(action->astClass);
             } else {
                 ruleClass = baseAstClass;
             }
             // Ensure class has members for all args
-            for (RuleArg *ruleArg : action->ruleArgs) {
-                if (defClass->members.count(typedPart->identifier) != 0) {
-                    if (defClass->members[typedPart->identifier]->type != typedPart) {
+            for (RuleArg ruleArg : action->args) {
+                TypedPart *typedPart = ruleArg.typedPart;
+                if (ruleClass->members.count(typedPart->identifier) != 0) {
+                    if (*ruleClass->members[typedPart->identifier]->typedPart != *typedPart) {
                         // Member has different type
                         printf("Member has different type");
                         exit(1);
                     }
                 } else {
-                    defClass->members.emplace(
+                    ruleClass->members.emplace(
                         typedPart->identifier,
-                        AstClassMember(typedPart)
+                        new AstClassMember(typedPart)
                     );
                 }
             }
             // Ensure ast class constructor
             bool constructorFound = false;
-            for (AstClassConstructor *constr : defClass->constructors) {
-                if (constr->size() == action->ruleArgs.size()) {
+            for (AstClassConstructor *constr : ruleClass->constructors) {
+                if (constr->args.size() == action->args.size()) {
                     // Do simple equality check.
                     // Concievably we could try to reorder, but
                     // that could also lead to more volatility
@@ -638,9 +650,9 @@ class BuildAstVisitor : public DescrVisitor {
                     // Perhaps when the ast interface is defined,
                     // reorder could be tried.
                     bool isEqual = true;
-                    for (int i = 0; i < constr->size(); ++i) {
+                    for (size_t i = 0; i < constr->args.size(); ++i) {
                         // Assume correspondance with member field types
-                        if (*constr->args[i] != action->ruleArgs[i].identifier) {
+                        if (constr->args[i] != action->args[i].typedPart->identifier) {
                             isEqual = false;
                             break;
                         }
@@ -653,11 +665,11 @@ class BuildAstVisitor : public DescrVisitor {
             }
             if (!constructorFound) {
                 // Create constructor based on ruleArgs
-                AstClassConstructor constr;
-                for (RuleArg *ruleArg : action->ruleArgs) {
-                    constr.args.push_back(action->ruleArg->identifier);
+                AstClassConstructor *constr = new AstClassConstructor();
+                for (RuleArg ruleArg : action->args) {
+                    constr->args.push_back(ruleArg.typedPart->identifier);
                 }
-                defClass->constructors.push_back(constr);
+                ruleClass->constructors.push_back(constr);
             }
         }
     }

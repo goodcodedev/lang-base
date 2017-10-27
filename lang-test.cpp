@@ -1,5 +1,6 @@
 #include "DescrNode.hpp"
 #include "LangData.hpp"
+using namespace LangData;
 
 extern FILE *yyin;
 extern int yyparse();
@@ -29,8 +30,14 @@ SourceNode* parseFile(std::string fileName) {
 
 int main() {
 	auto result = parseFile(std::string(PROJECT_ROOT) + "/test.lang");
-	auto langData = new LangData();
-	auto visit = new BuildLangDataVisitor(langData);
-	visit->visitSource(result);
+	auto langData = new LData();
+	auto keysVisit = new RegisterKeysVisitor(langData);
+	auto listVisit = new RegisterListKeysVisitor(langData);
+	auto rulesVisit = new BuildRulesVisitor(langData);
+	auto astVisit = new BuildAstVisitor(langData);
+	keysVisit->visitSource(result);
+	listVisit->visitSource(result);
+	rulesVisit->visitSource(result);
+	astVisit->visitSource(result);
     return 0;
 }

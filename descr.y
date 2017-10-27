@@ -74,8 +74,8 @@ tokenType: TOKEN_STRING { $$ = TSTRING; }
 token_decl: TOKEN IDENTIFIER STRING {
         $$ = new TokenNode($2, $3);
     }
-    | TOKEN LBRACKET tokenType RBRACKET IDENTIFIER STRING {
-        $$ = new TokenNode(static_cast<TokenType>($3), $5, $6);
+    | TOKEN IDENTIFIER COLON tokenType STRING {
+        $$ = new TokenNode(static_cast<TokenType>($4), $2, $5);
     }
     ;
 enum_def: ENUM type_decl LEFT_BRACE enum_decls RIGHT_BRACE { 
