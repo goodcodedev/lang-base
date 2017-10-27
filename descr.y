@@ -104,14 +104,19 @@ ast_defs: /* empty */ {
     | ast_defs ast_def { $$ = push_node<AstDef>($1, $2); }
     | ast_defs COMMA ast_def { $$ = push_node<AstDef>($1, $3); }
     ;
-ast_def: IDENTIFIER ast_parts { $$ = new AstDef($1, reinterpret_cast<std::vector<AstPart*>*>($2)); };
+ast_def: IDENTIFIER { $$ = new AstDef($1, new std::vector<AstPart*>); }
+        | IDENTIFIER LEFT_PAREN ast_parts RIGHT_PAREN { $$ = new AstDef($1, reinterpret_cast<std::vector<AstPart*>*>($3)); }
+        | LEFT_PAREN ast_parts RIGHT_PAREN { $$ = new AstDef("", reinterpret_cast<std::vector<AstPart*>*>($2)); }
+        ;
 ast_parts: /* empty */ {
         $$ = new std::vector<AstPart*>;
     }
     | ast_parts ast_part { $$ = push_node<AstPart>($1, re<AstPart>($2)); }
     ;
 
-ast_part: IDENTIFIER { $$ = new AstPart($1); };
+ast_part: IDENTIFIER { $$ = new AstPart($1); }
+          | IDENTIFIER COLON IDENTIFIER { $$ = new AstPart($3, $1); }
+          ;
 
 list: LIST IDENTIFIER IDENTIFIER IDENTIFIER { $$ = new ListNode($2, $3, $4); };
 

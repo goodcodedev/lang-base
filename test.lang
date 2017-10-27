@@ -12,6 +12,8 @@ enum Type {
 ast Function (Type identifier LEFT_PAREN argExprs RIGHT_PAREN LEFT_BRACE RIGHT_BRACE)
 ast IntExpr (intConst)
 ast expr:Expression {
-    IntExpr
+    IntExpr,
+    IdExpr (identifier),
+    (identifier intMember:intConst)
 }
-list argExprs expr COMMA
+list argExprs COMMA expr

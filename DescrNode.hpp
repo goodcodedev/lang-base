@@ -101,7 +101,10 @@ public:
 class AstPart : public DescrNode {
 public:
     std::string identifier;
+    std::string alias;
     AstPart(std::string identifier) : DescrNode(AST_PART_NODE), identifier(identifier) {}
+    AstPart(std::string identifier, std::string alias) 
+        : DescrNode(AST_PART_NODE), identifier(identifier), alias(alias) {}
 };
 
 class AstDef : public DescrNode {

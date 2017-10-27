@@ -48,9 +48,13 @@ class TypedPart {
 public:
     PartType type;
     string identifier;
+    string alias;
     TypedPart(PartType type, string identifier) : type(type), identifier(identifier) {}
     bool operator==(const TypedPart &other) {
-        return (other.type == this->type && other.identifier.compare(this->identifier) == 0);
+        // Todo, check (ast) expr type
+        // or maybe this should be done outside this equality overload
+        return (other.type == this->type
+            && other.alias.compare(this->alias) == 0);
     }
     bool operator!=(const TypedPart &other) {
         return !(*this == other);
@@ -95,7 +99,18 @@ public:
 /**
  * Various actions triggered by rule matches.
  */
-class RuleAction {};
+enum RuleActionType {
+    RAAstConstruction,
+    RARef,
+    RAEnumValue,
+    RAListInit,
+    RAListPush
+};
+class RuleAction {
+public:
+    RuleActionType type;
+    RuleAction(RuleActionType type) : type(type) {}
+};
 
 /**
  * Argument used by rule actions which
@@ -115,9 +130,20 @@ class AstConstructionAction : public RuleAction {
 public:
     string astClass;
     vector<RuleArg> args;
-    AstConstructionAction(string astClass) : astClass(astClass) {}
+    AstConstructionAction(string astClass) : RuleAction(RAAstConstruction), astClass(astClass)  {}
     AstConstructionAction(string astClass, vector<RuleArg> args)
-        : astClass(astClass), args(args) {}
+        : RuleAction(RAAstConstruction), astClass(astClass), args(args) {}
+};
+
+/**
+ * Reference to part, passing it as current element
+ * This can be useful in list of rules.
+ */
+class RefAction : public RuleAction {
+public:
+    int num;
+    TypedPart *ref;
+    RefAction(int num, TypedPart *ref) : RuleAction(RARef), num(num), ref(ref) {}
 };
 
 /**
@@ -126,7 +152,7 @@ public:
 class EnumValueAction : public RuleAction {
 public:
     string enumMember;
-    EnumValueAction(string enumMember) : enumMember(enumMember) {}
+    EnumValueAction(string enumMember) : RuleAction(RAEnumValue), enumMember(enumMember) {}
 };
 
 /**
@@ -135,7 +161,7 @@ public:
 class ListInitAction : public RuleAction {
 public:
     TypedPart *type;
-    ListInitAction(TypedPart *type) : type(type) {}
+    ListInitAction(TypedPart *type) : RuleAction(RAListInit), type(type) {}
 };
 
 /**
@@ -147,7 +173,7 @@ public:
     int elemNum;
     TypedPart *type;
     ListPushAction(int listNum, int elemNum, TypedPart *type)
-        : listNum(listNum), elemNum(elemNum), type(type) {}
+        : RuleAction(RAListPush), listNum(listNum), elemNum(elemNum), type(type) {}
 };
 
 /**
@@ -246,7 +272,7 @@ public:
     map<string, AstClassMember*> members;
     vector<AstClassConstructor*> constructors;
     set<string> subClasses;
-    AstClass() {}
+    AstClass(string identifier) : identifier(identifier) {}
     void ensureMember(TypedPart *typedPart) {
         if (members.count(typedPart->identifier) == 0) {
             members.emplace(typedPart->identifier, new AstClassMember(typedPart));
@@ -270,7 +296,7 @@ public:
     map<string, AstClass*> astClasses;
     LData() {}
     AstClass* ensureClass(string className) {
-        if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass());
+        if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass(className));
         return astClasses[className];
     }
     AstEnum* ensureEnum(string typeName) {
@@ -288,6 +314,24 @@ public:
     ListGrammarType* ensureListGrammar(string key) {
         if (!listGrammarTypes.count(key)) listGrammarTypes.emplace(key, new ListGrammarType(key));
         return listGrammarTypes[key];
+    }
+    // Ensures sub relationsship, and returns the subclass.
+    // Will check for equality and just return base class
+    // if equal.
+    AstClass* ensureSubRelation(string baseClass, string subClass) {
+        AstClass *base = ensureClass(baseClass);
+        if (subClass == baseClass) {
+            return base;
+        } else {
+            AstClass *sub = ensureClass(subClass);
+            if (sub->extends != "" && sub->extends != baseClass) {
+                printf("Todo, handle different base");
+                exit(1);
+            }
+            sub->extends = baseClass;
+            base->subClasses.insert(subClass);
+            return sub;
+        }
     }
     TypedPart* getTypedPart(string identifier) {
         // Check token
@@ -357,7 +401,8 @@ public:
     }
     void visitEnum(EnumNode *node) {
         // Register grammartype on the key
-        langData->ensureEnumGrammar(langData->keyFromTypeDecl(node->typeDecl));
+        EnumGrammarType *grammar = langData->ensureEnumGrammar(langData->keyFromTypeDecl(node->typeDecl));
+        grammar->enumKey = node->typeDecl->identifier;
         DescrVisitor::visitEnum(node);
     }
     // Add enum members as tokens in format
@@ -496,39 +541,60 @@ public:
             // to a subclass of the baseClass or another ast
             // rule. (only next rule is checked, but top level
             // rules should have the type specified)
+            // When rules refer to args/parts
+            // that is expected in parens.
+            bool isKeyRef = false;
             if (astDef->identifier.compare("") != 0) {
                 // Check for other ast rule
                 if (langData->astGrammarTypes.count(astDef->identifier) != 0) {
                     // Get class name from other type
                     defClass = langData->astGrammarTypes[astDef->identifier]->astClass;
+                    isKeyRef = true;
+                } else {
+                    // Else use identifier as class
+                    defClass = astDef->identifier;
                 }
             }
             GrammarRule *curRule = new GrammarRule();
-            // Collect rule args
-            vector<RuleArg> ruleArgs;
-            int num = 0;
-            vector<string> tokenList;
-            for (AstPart *part : *astDef->nodes) {
-                ++num;
-                TypedPart *typedPart = langData->getTypedPart(part->identifier);
-                if (typedPart == nullptr) {
-                    printf("Key not found: %s\n", part->identifier.c_str());
-                    exit(1);
+            if (isKeyRef) {
+                // Rule just need to use referred rule as part
+                // which should return ast object
+                curRule->tokenList.push_back(astDef->identifier);
+                curRule->action = new RefAction(1, new TypedPartAst(
+                    astDef->identifier,
+                    defClass
+                ));
+            } else {
+                // Collect rule args
+                vector<RuleArg> ruleArgs;
+                int num = 0;
+                vector<string> tokenList;
+                for (AstPart *part : *astDef->nodes) {
+                    ++num;
+                    TypedPart *typedPart = langData->getTypedPart(part->identifier);
+                    // Just setting alias here
+                    // Used as key to ast member and constructor args
+                    typedPart->alias = (part->alias != "") ? part->alias : part->identifier;
+                    if (typedPart == nullptr) {
+                        printf("Key not found: %s\n", part->identifier.c_str());
+                        exit(1);
+                    }
+                    tokenList.push_back(typedPart->identifier);
+                    if (typedPart->type == PTOKEN || typedPart == nullptr) {
+                        // Skip const literal tokens
+                        continue;
+                    }
+                    // Add rule arg
+                    ruleArgs.push_back(RuleArg(num, typedPart));
                 }
-                tokenList.push_back(typedPart->identifier);
-                if (typedPart->type == PTOKEN || typedPart == nullptr) {
-                    // Skip const literal tokens
-                    continue;
-                }
-                // Add rule arg
-                ruleArgs.push_back(RuleArg(num, typedPart));
+                // Add rule to grammar type
+                curRule->tokenList = tokenList;
+                printf("Adding constr action: %s\n", defClass.c_str());
+                curRule->action = new AstConstructionAction(
+                    defClass,
+                    ruleArgs
+                );
             }
-            // Add rule to grammar type
-            curRule->tokenList = tokenList;
-            curRule->action = new AstConstructionAction(
-                defClass,
-                ruleArgs
-            );
             grammar->rules.push_back(curRule);
         }
     }
@@ -536,7 +602,7 @@ public:
         ListGrammarType *grammar = langData->ensureListGrammar(node->identifier);
         TypedPart *typed1 = langData->getTypedPart(node->astKey);
         TypedPart *typed2 = langData->getTypedPart(node->tokenSep);
-        if (typed1 == nullptr ||typed2 == nullptr) {
+        if (typed1 == nullptr || typed2 == nullptr) {
             printf("List key not found");
             exit(1);
         }
@@ -604,37 +670,45 @@ public:
         AstGrammarType *grammar = langData->ensureAstGrammar(grammarKey);
         // Get ast base class
         string baseAstName = node->typeDecl->identifier;
-        AstClass *baseAstClass = langData->ensureClass(baseAstName);
+        langData->ensureClass(baseAstName);
         // Go through rules and ensure ast classes
         // has needed members and constructors
         for (GrammarRule *rule : grammar->rules) {
-            AstConstructionAction *action = static_cast<AstConstructionAction*>(rule->action);
-            AstClass *ruleClass;
-            if (action->astClass != baseAstName) {
-                ruleClass = langData->ensureClass(action->astClass);
-                // Ensure subclass extends base class and
-                // subclass registered as child
-                if (ruleClass->extends != "" && ruleClass->extends != baseAstName) {
-                    printf("Todo, handle different base");
+            // If rule is a ref, register referenced
+            // ast class as subclass.
+            // Members and constructors are set up when
+            // visiting referenced ast node.
+            if (rule->action->type == RARef) {
+                RefAction *refAction = static_cast<RefAction*>(rule->action);
+                if (refAction->ref->type != PAST) {
+                    printf("Can only handle ref to ast");
                     exit(1);
                 }
-                ruleClass->extends = baseAstName;
-                baseAstClass->subClasses.insert(action->astClass);
-            } else {
-                ruleClass = baseAstClass;
+                // Ensure subclass relationship
+                TypedPartAst *refType = static_cast<TypedPartAst*>(refAction->ref);
+                langData->ensureSubRelation(baseAstName, refType->astClass);
+                continue;
+            } else if (rule->action->type != RAAstConstruction) {
+                printf("Can only handle ref and ast construction actions");
+                exit(1);
             }
+            AstConstructionAction *action = static_cast<AstConstructionAction*>(rule->action);
+            AstClass *ruleClass = langData->ensureSubRelation(baseAstName, action->astClass);
             // Ensure class has members for all args
             for (RuleArg ruleArg : action->args) {
                 TypedPart *typedPart = ruleArg.typedPart;
-                if (ruleClass->members.count(typedPart->identifier) != 0) {
-                    if (*ruleClass->members[typedPart->identifier]->typedPart != *typedPart) {
+                if (ruleClass->members.count(typedPart->alias) != 0) {
+                    // This equality test will check identifier, alias and type
+                    // It should probably test type more thoroughly, and
+                    // rather check resolved key todo
+                    if (*ruleClass->members[typedPart->alias]->typedPart != *typedPart) {
                         // Member has different type
                         printf("Member has different type");
                         exit(1);
                     }
                 } else {
                     ruleClass->members.emplace(
-                        typedPart->identifier,
+                        typedPart->alias,
                         new AstClassMember(typedPart)
                     );
                 }
@@ -652,7 +726,7 @@ public:
                     bool isEqual = true;
                     for (size_t i = 0; i < constr->args.size(); ++i) {
                         // Assume correspondance with member field types
-                        if (constr->args[i] != action->args[i].typedPart->identifier) {
+                        if (constr->args[i] != action->args[i].typedPart->alias) {
                             isEqual = false;
                             break;
                         }
@@ -667,7 +741,7 @@ public:
                 // Create constructor based on ruleArgs
                 AstClassConstructor *constr = new AstClassConstructor();
                 for (RuleArg ruleArg : action->args) {
-                    constr->args.push_back(ruleArg.typedPart->identifier);
+                    constr->args.push_back(ruleArg.typedPart->alias);
                 }
                 ruleClass->constructors.push_back(constr);
             }
