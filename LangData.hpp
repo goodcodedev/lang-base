@@ -295,6 +295,30 @@ public:
     map<string, EnumGrammarType*> enumGrammarTypes;
     map<string, AstClass*> astClasses;
     LData() {}
+    // Some built in tokens provided
+    // from identifier
+    // Returns nullptr when not found.
+    TokenData* getBuiltInToken(string identifier) {
+        if (identifier == "LPAREN") return new TokenData(NONE, "LPAREN", "\\(");
+        if (identifier == "RPAREN") return new TokenData(NONE, "RPAREN", "\\)");
+        if (identifier == "LBRACE") return new TokenData(NONE, "LBRACE", "\\{");
+        if (identifier == "RBRACE") return new TokenData(NONE, "RBRACE", "\\}");
+        if (identifier == "COMMA") return new TokenData(NONE, "COMMA", "\\,");
+        if (identifier == "intConst") return new TokenData(TINT, "intConst", "[1-9][0-9]*");
+        if (identifier == "identifier") return new TokenData(TSTRING, "identifier", "[_a-zA-Z][0-9_a-zA-Z]*");
+        return nullptr;
+    }
+    // Add built in token or fail
+    void addBuiltInToken(string identifier) {
+        // Check for built in
+        TokenData *builtIn = getBuiltInToken(identifier);
+        if (builtIn == nullptr) {
+            printf("Key not found: %s\n", identifier.c_str());
+            exit(1);
+        }
+        // Add built in token
+        tokenData.emplace(identifier, builtIn);
+    }
     AstClass* ensureClass(string className) {
         if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass(className));
         return astClasses[className];
@@ -435,7 +459,27 @@ public:
         langData->ensureListGrammar(node->identifier);
     }
 };
-
+// Adds built in tokens.
+// Keys should be registered as they can
+// override built in tokens.
+class AddBuiltInTokens : public DescrVisitor {
+public:
+    LData *langData;
+    AddBuiltInTokens(LData *langData) : langData(langData) {}
+    void visitAstPart(AstPart *node) {
+        TypedPart *typed = langData->getTypedPart(node->identifier);
+        if (typed == nullptr) {
+            langData->addBuiltInToken(node->identifier);
+        }
+    }
+    void visitList(ListNode *node) {
+        // Simply check for null on either
+        TypedPart *typed1 = langData->getTypedPart(node->astKey);
+        if (typed1 == nullptr) langData->addBuiltInToken(node->astKey);
+        TypedPart *typed2 = langData->getTypedPart(node->tokenSep);
+        if (typed2 == nullptr) langData->addBuiltInToken(node->tokenSep);
+    }
+};
 /**
  * Lists are dependent on other keys for their
  * type definition, so here we have the other

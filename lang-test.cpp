@@ -33,9 +33,11 @@ int main() {
 	auto langData = new LData();
 	auto keysVisit = new RegisterKeysVisitor(langData);
 	auto listVisit = new RegisterListKeysVisitor(langData);
+	auto builtInVisit = new AddBuiltInTokens(langData);
 	auto rulesVisit = new BuildRulesVisitor(langData);
 	auto astVisit = new BuildAstVisitor(langData);
 	keysVisit->visitSource(result);
+	builtInVisit->visitSource(result);
 	listVisit->visitSource(result);
 	rulesVisit->visitSource(result);
 	astVisit->visitSource(result);
