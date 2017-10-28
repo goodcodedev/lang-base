@@ -9,6 +9,10 @@
 #include <fstream>
 #include <array>
 
+extern FILE *yyin;
+extern int yyparse();
+extern DescrNode *result; 
+
 namespace LangData {
 
 using std::vector;
@@ -28,6 +32,9 @@ public:
     string regex;
     TokenData(TokenType type, string key, string regex)
         : type(type), key(key), regex(regex) {}
+    string getGrammarToken() {
+        return key + "_T";
+    }
 };
 
 /**
@@ -66,6 +73,28 @@ public:
     }
     virtual void generateGrammarVal(string *str, int num, LData *langData) = 0;
     virtual void generateGrammarType(string *str, LData *langData) = 0;
+    string getGrammarToken() {
+        switch (type) {
+            case PSTRING:
+            case PINT:
+            case PFLOAT:
+            case PTOKEN:
+            return identifier + "_T";
+            break;
+            default:
+            return identifier;
+        }
+    }
+    string getMemberKey() {
+        if (alias != "" && alias != identifier) {
+            return alias;
+        } else if (type == PENUM || type == PAST) {
+            // Lowercase
+            return "lc_"+identifier;
+        } else {
+            return identifier;
+        }
+    }
 };
 
 // Token part
@@ -483,7 +512,8 @@ void StartAction::generateGrammarVal(string *str, LData *langData) {
 
 void GrammarRule::generateGrammar(string *str, LData *langData) {
     for (string token : tokenList) {
-        *str += " " + token;
+        TypedPart *typed = langData->getTypedPart(token);
+        *str += " " + typed->getGrammarToken();
     }
     *str += " { ";
     action->generateGrammar(str, langData);
@@ -525,7 +555,7 @@ void AstEnum::generateToStringMethod(string *str, LData *langData) {
 void AstClassMember::generateMember(string *str, LData *langData, AstClass *astClass) {
     *str += "    ";
     typedPart->generateGrammarType(str, langData);
-    *str += " " + typedPart->alias + ";\n";
+    *str += " " + typedPart->getMemberKey() + ";\n";
 }
 void AstClassConstructor::generateConstructor(string *str, LData *langData, AstClass *astClass) {
     *str += "    ";
@@ -547,8 +577,24 @@ void AstClassConstructor::generateConstructor(string *str, LData *langData, AstC
     // Initialization list
     if (numArgs > 0) {
         *str += " : ";
+        // Initialize in same order as members
+        vector<int> order;
+        for (auto const &pair : astClass->members) {
+            // Check for arg, and add to order vector
+            // if found
+            for (size_t i = 0; i < numArgs; ++i) {
+                if (args[i] == pair.first) {
+                    order.push_back(i);
+                    break;
+                }
+            }
+        }
+        if (order.size() != numArgs) {
+            printf("Didn't find members for all args\n");
+            exit(1);
+        }
         for (size_t i = 0; i < numArgs; ++i) {
-            string arg = args[i];
+            string arg = args[order[i]];
             *str += arg + "(" + arg + ")";
             if (i + 1 < numArgs) {
                 *str += ", ";
@@ -560,7 +606,7 @@ void AstClassConstructor::generateConstructor(string *str, LData *langData, AstC
 void AstClass::generateHeader(string *str, LData *langData) {
     *str += "class " + identifier;
     if (extends != "") *str += " : public " + extends;
-    *str += " {\n";
+    *str += " {\npublic:\n";
     for (auto const &member : members) {
         member.second->generateMember(str, langData, this);
     }
@@ -641,16 +687,16 @@ TypedPart* LData::getTypedPart(string identifier) {
         TokenData *tokenRef = tokenData[identifier];
         switch (tokenRef->type) {
             case NONE:
-            return new TypedPartToken(identifier);
+            return new TypedPartToken(tokenRef->key);
             break;
             case TSTRING:
-            return new TypedPartPrim(PSTRING, identifier);
+            return new TypedPartPrim(PSTRING, tokenRef->key);
             break;
             case TINT:
-            return new TypedPartPrim(PINT, identifier);
+            return new TypedPartPrim(PINT, tokenRef->key);
             break;
             case TFLOAT:
-            return new TypedPartPrim(PFLOAT, identifier);
+            return new TypedPartPrim(PFLOAT, tokenRef->key);
             break;
         }
     } else if (enumGrammarTypes.count(identifier) != 0) {
@@ -849,6 +895,8 @@ public:
         // Enums are one of several token values
         for (EnumDeclNode *enumDecl : *node->nodes) {
             GrammarRule *rule = new GrammarRule();
+            // Use typed part to get possibly
+            // changed identifier
             rule->tokenList = vector<string> { enumDecl->identifier };
             rule->action = new EnumValueAction(enumDecl->identifier);
             grammarType->rules.push_back(rule);
@@ -980,6 +1028,7 @@ public:
     }
 };
 
+
 class BuildAstVisitor : public DescrVisitor {
 public:
     LData *langData;
@@ -1025,18 +1074,19 @@ public:
             // Ensure class has members for all args
             for (RuleArg ruleArg : action->args) {
                 TypedPart *typedPart = ruleArg.typedPart;
-                if (ruleClass->members.count(typedPart->alias) != 0) {
+                string memberKey = typedPart->getMemberKey();
+                if (ruleClass->members.count(memberKey) != 0) {
                     // This equality test will check identifier, alias and type
                     // It should probably test type more thoroughly, and
                     // rather check resolved key todo
-                    if (*ruleClass->members[typedPart->alias]->typedPart != *typedPart) {
+                    if (*ruleClass->members[memberKey]->typedPart != *typedPart) {
                         // Member has different type
                         printf("Member has different type");
                         exit(1);
                     }
                 } else {
                     ruleClass->members.emplace(
-                        typedPart->alias,
+                        memberKey,
                         new AstClassMember(typedPart)
                     );
                 }
@@ -1054,7 +1104,7 @@ public:
                     bool isEqual = true;
                     for (size_t i = 0; i < constr->args.size(); ++i) {
                         // Assume correspondance with member field types
-                        if (constr->args[i] != action->args[i].typedPart->alias) {
+                        if (constr->args[i] != action->args[i].typedPart->getMemberKey()) {
                             isEqual = false;
                             break;
                         }
@@ -1069,7 +1119,7 @@ public:
                 // Create constructor based on ruleArgs
                 AstClassConstructor *constr = new AstClassConstructor();
                 for (RuleArg ruleArg : action->args) {
-                    constr->args.push_back(ruleArg.typedPart->alias);
+                    constr->args.push_back(ruleArg.typedPart->getMemberKey());
                 }
                 ruleClass->constructors.push_back(constr);
             }
@@ -1080,11 +1130,13 @@ public:
 class SourceGenerator {
 public:
     LData *langData;
-    SourceGenerator(LData *langData) : langData(langData) {}
+    string folder;
+    SourceGenerator(LData *langData, string folder) 
+        : langData(langData), folder(folder) {}
 
     void saveToFile(string *str, string fileName) {
         std::ofstream f;
-        f.open(std::string(PROJECT_ROOT) + "/" + fileName);
+        f.open(folder + "/" + fileName);
         f << *str;
         printf("%s", str->c_str());
         f.close();
@@ -1107,28 +1159,28 @@ public:
             TokenData *token = pair.second;
             switch (token->type) {
                 case NONE:
-                str += token->regex + " { return " + token->key + "; }\n";
+                str += token->regex + " { return " + token->getGrammarToken() + "; }\n";
                 break;
                 case TINT:
-                str += token->regex + " { yylval.ival = atoi(yytext); return " + token->key + "; }\n";
+                str += token->regex + " { yylval.ival = atoi(yytext); return " + token->getGrammarToken() + "; }\n";
                 break;
                 case TSTRING:
-                str += token->regex + " { yylval.sval = __strdup(yytext); return " + token->key + "; }\n";
+                str += token->regex + " { yylval.sval = __strdup(yytext); return " + token->getGrammarToken() + "; }\n";
                 break;
                 case TFLOAT:
-                str += token->regex + " { yylval.fval = atof(yytext); return " + token->key + "; }\n";
+                str += token->regex + " { yylval.fval = atof(yytext); return " + token->getGrammarToken() + "; }\n";
                 break;
             }
         }
         str +=  "%%\n"
                 "int yywrap() { return 1; }\n";
-        saveToFile(&str, langData->langKey + ".l");
+        saveToFile(&str, "gen/" + langData->langKey + ".l");
     }
     // Generate bison grammar
     void generateGrammarFile() {
         string str = "";
         str +=  "%{\n"
-                "#include <stdio.h>\n";
+                "#include <stdio.h>\n"
                 "#include \"" + langData->langKey + ".hpp\"\n";
         // Result variable
         if (langData->startAction == nullptr) {
@@ -1158,10 +1210,10 @@ public:
         for (auto const &pair : langData->tokenData) {
             TokenData *token = pair.second;
             switch (token->type) {
-                case NONE: str += "%token " + token->key + "\n"; break;
-                case TINT: str += "%token <ival> " + token->key + "\n"; break;
-                case TSTRING: str += "%token <sval> " + token->key + "\n"; break;
-                case TFLOAT: str += "%token <fval> " + token->key + "\n"; break;
+                case NONE: str += "%token " + token->getGrammarToken() + "\n"; break;
+                case TINT: str += "%token <ival> " + token->getGrammarToken() + "\n"; break;
+                case TSTRING: str += "%token <sval> " + token->getGrammarToken() + "\n"; break;
+                case TFLOAT: str += "%token <fval> " + token->getGrammarToken() + "\n"; break;
             }
         }
         // Types
@@ -1206,11 +1258,21 @@ public:
         for (auto const &grammar : langData->enumGrammarTypes) {
             grammar.second->generateGrammar(&str, langData);
         }
-        saveToFile(&str, langData->langKey + ".y");
+        str += "\n%%\n";
+
+        str += "void yyerror(const char *s) {\n"
+               "    printf(\"Parse error on line %d: %s\", yylineno, s);\n"
+               "}\n";
+        saveToFile(&str, "gen/" + langData->langKey + ".y");
     }
     // Generate c++ classes, enums etc
     void generateAstClasses() {
-        string str = "";
+        string str = "#pragma once\n";
+        str += "#include <string>\n";
+        str += "#include <vector>\n";
+        // Some externs, needed for parseFile
+        str += "extern FILE *yyin;\n";
+        str += "extern int yyparse();\n";
         for (auto const &astEnum : langData->enums) {
             astEnum.second->generateDefinition(&str, langData);
         }
@@ -1220,27 +1282,22 @@ public:
         for (auto const &astClass : langData->astClasses) {
             astClass.second->generateHeader(&str, langData);
         }
-        generateLoader(&str);
-        saveToFile(&str, langData->langKey + ".hpp");
-    }
-    void generateLoader(string *str) {
-        *str += "extern FILE *yyin;\n";
-        *str += "extern int yyparse();\n";
-        *str += "extern ";
-        langData->startAction->startPart->generateGrammarType(str, langData);
-        *str += " result;\n";
-        langData->startAction->startPart->generateGrammarType(str, langData);
-        *str += " parseFile(std::string fileName) {\n";
-        *str +=  "   FILE *sourceFile;\n"
-                "   errno = 0;\n"
-                "   string fullFile = std::string(PROJECT_ROOT) + fileName;\n"
+        // This extern requires ast header
+        str += "extern ";
+        langData->startAction->startPart->generateGrammarType(&str, langData);
+        str += " result;\n";
+        str += "class Loader {\npublic:\n";
+        str += "static ";
+        langData->startAction->startPart->generateGrammarType(&str, langData);
+        str += " parseFile(std::string fileName) {\n";
+        str +=  "   FILE *sourceFile;\n"
                 "   #ifdef _WIN32\n"
-                "   fopen_s(&sourceFile, fullFile.c_str(), \"r\");\n"
+                "   fopen_s(&sourceFile, fileName.c_str(), \"r\");\n"
                 "   #else\n"
-                "   sourceFile = fopen(fullFile.c_str(), \"r\");\n"
+                "   sourceFile = fopen(fileName.c_str(), \"r\");\n"
                 "   #endif\n"
                 "   if (!sourceFile) {\n"
-                "       printf(\"Can't open file %d\", errno);\n"
+                "       printf(\"Can't open file %s\", fileName.c_str());\n"
                 "       exit(1);\n"
                 "   }\n"
                 "   yyin = sourceFile;\n"
@@ -1249,6 +1306,8 @@ public:
                 "   } while (!feof(yyin));\n"
                 "   return result;\n"
                 "}\n";
+        str += "};\n";
+        saveToFile(&str, "gen/" + langData->langKey + ".hpp");
     }
     void generateVisitor() {
 
@@ -1278,33 +1337,29 @@ public:
 
     void runFlexBison() {
         // Flex
-        string lexFile = string(PROJECT_ROOT) + "/" + langData->langKey + ".l"; 
-        string lexOutput = string(PROJECT_ROOT) + "/" + langData->langKey + ".yy.cpp"; 
+        string lexFile = folder + "/gen/" + langData->langKey + ".l"; 
+        string lexOutput = folder + "/gen/" + langData->langKey + ".yy.cpp"; 
         string *lexResult = execute("flex -o " + lexOutput + " " + lexFile);
         // Bison
-        string grammarFile = string(PROJECT_ROOT) + "/" + langData->langKey + ".y"; 
-        string grammarOutput = string(PROJECT_ROOT) + "/" + langData->langKey + ".tab.h"; 
-        string grammarHeader = string(PROJECT_ROOT) + "/" + langData->langKey + ".tab.cpp"; 
+        string grammarFile = folder + "/gen/" + langData->langKey + ".y"; 
+        string grammarOutput = folder + "/gen/" + langData->langKey + ".tab.h"; 
+        string grammarHeader = folder + "/gen/" + langData->langKey + ".tab.cpp"; 
         string *grammarResult = execute("bison -o " + grammarOutput
             + " --defines=" + grammarHeader + " " + grammarFile);
     }
 };
 
-extern FILE *yyin;
-extern int yyparse();
-extern DescrNode *result; 
 
 SourceNode* parseDescr(string fileName) {
-    string fullFile = string(PROJECT_ROOT) + fileName;
     FILE *sourceFile;
     errno = 0;
 #ifdef _WIN32
-    fopen_s(&sourceFile, fullFile.c_str(), "r");
+    fopen_s(&sourceFile, fileName.c_str(), "r");
 #else
-    sourceFile = fopen(fullFile.c_str(), "r");
+    sourceFile = fopen(fileName.c_str(), "r");
 #endif
 	if (!sourceFile) {
-		printf("Can't open file %d", errno);
+		printf("Can't open file err:%d, file:%s\n", errno, fileName.c_str());
 		exit(1);
 	}
 	yyin = sourceFile;
@@ -1320,8 +1375,8 @@ SourceNode* parseDescr(string fileName) {
 /**
  * Runs the pipeline to generate files
  */
-void genFiles(string langKey) {
-	auto result = parseDescr(langKey + ".lang");
+void genFiles(string folder, string langKey) {
+	auto result = parseDescr(folder + "/" + langKey + ".lang");
 	auto langData = new LData(langKey);
 	auto keysVisit = new RegisterKeysVisitor(langData);
 	auto listVisit = new RegisterListKeysVisitor(langData);
@@ -1332,8 +1387,9 @@ void genFiles(string langKey) {
 	builtInVisit->visitSource(result);
 	listVisit->visitSource(result);
 	rulesVisit->visitSource(result);
-	astVisit->visitSource(result);
-	SourceGenerator *sourceGen = new SourceGenerator(langData);
+    astVisit->visitSource(result);
+	SourceGenerator *sourceGen = new SourceGenerator(langData, folder);
+    sourceGen->execute("mkdir -p " + folder + "/gen");
 	sourceGen->generateLexFile();
 	sourceGen->generateGrammarFile();
 	sourceGen->generateAstClasses();
