@@ -13,7 +13,8 @@ enum NodeType {
     AST_DEF_NODE,
     AST_PART_NODE,
     LIST_NODE,
-    SOURCE_NODE
+    SOURCE_NODE,
+    START_NODE
 };
 
 enum TokenType {
@@ -60,6 +61,12 @@ class SourceNode : public DescrNode {
 public:
     std::vector<DescrNode*> *nodes;
     SourceNode(std::vector<DescrNode*> *nodes) : DescrNode(SOURCE_NODE), nodes(nodes) {}
+};
+
+class StartNode : public DescrNode {
+public:
+    std::string identifier;
+    StartNode(std::string identifier) : DescrNode(START_NODE), identifier(identifier) {}
 };
 
 class TokenNode : public DescrNode {

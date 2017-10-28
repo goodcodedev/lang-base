@@ -6,9 +6,7 @@ if (NOT FIPS_IMPORT)
     fips_project(lang-base)
 endif()
 
-fips_begin_app(lang-base cmdline)
-    include_directories(.)
-    fips_files(lang-test.cpp)
+fips_begin_module(lang-base cmdline)
     fips_files(
         lex.yy.cpp descr.tab.h descr.tab.cpp
         DescrNode.hpp DescrVisitor.hpp

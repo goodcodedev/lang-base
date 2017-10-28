@@ -44,12 +44,13 @@ extern int yylineno;
 %token RBRACKET
 %token COMMA
 %token COLON
+%token START
 %token <sval> STRING
 %token TOKEN_STRING
 %token TOKEN_INT
 %token TOKEN_FLOAT
 
-%type <ast> source token_decl enum_def enum_decl ast ast_def ast_part list type_decl
+%type <ast> source token_decl enum_def enum_decl ast ast_def ast_part list type_decl start
 %type <vector> nodes enum_decls ast_defs ast_parts
 %type <enm> tokenType
 
@@ -64,6 +65,9 @@ nodes: /* empty */ {
     | nodes enum_def { $$ = push_node<DescrNode>($1, $2); }
     | nodes ast { $$ = push_node<DescrNode>($1, $2); }
     | nodes list { $$ = push_node<DescrNode>($1, $2); }
+    | nodes start { $$ = push_node<DescrNode>($1, $2); }
+    ;
+start: START IDENTIFIER { $$ = new StartNode($2); }
     ;
 
 tokenType: TOKEN_STRING { $$ = TSTRING; }

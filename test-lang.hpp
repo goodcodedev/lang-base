@@ -5,7 +5,7 @@ static std::string enumTypeToString(Type item) {
     switch (item) {
     case INT:return "int";
     case VOID:return "void";
-    default: return ;
+    default: return "";
     }
 }
 class Expression {
@@ -24,3 +24,22 @@ class IntExpr : public Expression {
     int intConst;
     IntExpr(int intConst) : intConst(intConst) {}
 };
+Function* parseFile(std::string fileName) {
+   FILE *sourceFile;
+   errno = 0;
+   string fullFile = std::string(PROJECT_ROOT) + fileName;
+   #ifdef _WIN32
+   fopen_s(&sourceFile, fullFile.c_str(), "r");
+   #else
+   sourceFile = fopen(fullFile.c_str(), "r");
+   #endif
+   if (!sourceFile) {
+       printf("Can't open file %d", errno);
+       exit(1);
+   }
+   yyin = sourceFile;
+   do {
+       yyparse();
+   } while (!feof(yyin));
+   return result;
+}

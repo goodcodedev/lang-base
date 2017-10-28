@@ -1,3 +1,4 @@
+start Function
 enum Type {
     VOID "void",
     INT "int"

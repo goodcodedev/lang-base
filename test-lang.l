@@ -1,4 +1,5 @@
 %{
+#include "test-lang.tab.h"
 #define register // Deprecated in c++11
 #ifdef _WIN32
    #define __strdup _strdup

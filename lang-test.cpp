@@ -30,7 +30,7 @@ SourceNode* parseFile(std::string fileName) {
 
 int main() {
 	auto result = parseFile(std::string(PROJECT_ROOT) + "/test.lang");
-	auto langData = new LData();
+	auto langData = new LData("test-lang");
 	auto keysVisit = new RegisterKeysVisitor(langData);
 	auto listVisit = new RegisterListKeysVisitor(langData);
 	auto builtInVisit = new AddBuiltInTokens(langData);
@@ -47,5 +47,6 @@ int main() {
 	sourceGen->generateAstClasses();
 	sourceGen->generateVisitor();
 	sourceGen->generateTransformer();
+	sourceGen->runFlexBison();
     return 0;
 }

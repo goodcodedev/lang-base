@@ -18,8 +18,18 @@ public:
                 case LIST_NODE:
                 visitList(static_cast<ListNode*>(node));
                 break;
+                case START_NODE:
+                visitStart(static_cast<StartNode*>(node));
+                break;
+                default: {
+                    printf("Unrecognized source node");
+                    exit(1);
+                }
             }
         }
+    }
+    virtual void visitStart(StartNode *node) {
+
     }
     virtual void visitTypeDecl(TypeDecl *node) {
 

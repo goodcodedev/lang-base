@@ -28,6 +28,7 @@ list { return LIST; }
 string {return TOKEN_STRING; }
 int {return TOKEN_INT; }
 float {return TOKEN_FLOAT; }
+start { return START; }
 \{ { return LEFT_BRACE; }
 \} { return RIGHT_BRACE; }
 \( { return LEFT_PAREN; }

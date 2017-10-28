@@ -39,62 +39,41 @@
    /* Put the tokens into the symbol table, so that GDB and other debuggers
       know about them.  */
    enum yytokentype {
-     IDENTIFIER = 258,
-     TOKEN = 259,
-     ENUM = 260,
-     AST = 261,
-     LIST = 262,
-     LEFT_BRACE = 263,
-     RIGHT_BRACE = 264,
-     LEFT_PAREN = 265,
-     RIGHT_PAREN = 266,
-     LBRACKET = 267,
-     RBRACKET = 268,
-     COMMA = 269,
-     COLON = 270,
-     START = 271,
-     STRING = 272,
-     TOKEN_STRING = 273,
-     TOKEN_INT = 274,
-     TOKEN_FLOAT = 275
+     COMMA = 258,
+     INT = 259,
+     LBRACE = 260,
+     LPAREN = 261,
+     RBRACE = 262,
+     RPAREN = 263,
+     VOID = 264,
+     identifier = 265,
+     intConst = 266
    };
 #endif
 /* Tokens.  */
-#define IDENTIFIER 258
-#define TOKEN 259
-#define ENUM 260
-#define AST 261
-#define LIST 262
-#define LEFT_BRACE 263
-#define RIGHT_BRACE 264
-#define LEFT_PAREN 265
-#define RIGHT_PAREN 266
-#define LBRACKET 267
-#define RBRACKET 268
-#define COMMA 269
-#define COLON 270
-#define START 271
-#define STRING 272
-#define TOKEN_STRING 273
-#define TOKEN_INT 274
-#define TOKEN_FLOAT 275
+#define COMMA 258
+#define INT 259
+#define LBRACE 260
+#define LPAREN 261
+#define RBRACE 262
+#define RPAREN 263
+#define VOID 264
+#define identifier 265
+#define intConst 266
 
 
 
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 25 "../descr.y"
+#line 9 "/Users/gudmund/projects/lang-base/test-lang.y"
 {
-	int ival;
-	double fval;
-	char *sval;
-	void *ast;
-	void *vector;
-	int enm;
+   void *ptr;
+    char *sval;
+    int ival;
 }
 /* Line 1529 of yacc.c.  */
-#line 98 "../descr.tab.h"
+#line 77 "/Users/gudmund/projects/lang-base/test-lang.tab.cpp"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
