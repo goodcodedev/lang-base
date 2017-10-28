@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <array>
+#include <cctype>
 
 extern FILE *yyin;
 extern int yyparse();
@@ -90,7 +91,9 @@ public:
             return alias;
         } else if (type == PENUM || type == PAST) {
             // Lowercase
-            return "lc_"+identifier;
+            string lowercaseFirst = identifier;
+            lowercaseFirst[0] = std::tolower(lowercaseFirst[0]);
+            return lowercaseFirst;
         } else {
             return identifier;
         }
@@ -574,44 +577,58 @@ void AstClassConstructor::generateConstructor(string *str, LData *langData, AstC
         }
     }
     *str += ")";
-    // Initialization list
-    if (numArgs > 0) {
-        *str += " : ";
-        // Initialize in same order as members
-        vector<int> order;
-        for (auto const &pair : astClass->members) {
-            // Check for arg, and add to order vector
-            // if found
-            for (size_t i = 0; i < numArgs; ++i) {
-                if (args[i] == pair.first) {
-                    order.push_back(i);
-                    break;
-                }
-            }
-        }
-        if (order.size() != numArgs) {
-            printf("Didn't find members for all args\n");
-            exit(1);
-        }
+    // Parent constructor, initialization list
+    *str += " : ";
+    // Pass node type enum to parent class
+    string classEnum = astClass->identifier + "Node";
+    if (astClass->extends != "") {
+        *str += astClass->extends + "(" + classEnum + ")";
+    } else {
+        *str += "AstNode(" + classEnum + ")";
+    }
+    // Initialize in same order as members
+    vector<int> order;
+    for (auto const &pair : astClass->members) {
+        // Check for arg, and add to order vector
+        // if found
         for (size_t i = 0; i < numArgs; ++i) {
-            string arg = args[order[i]];
-            *str += arg + "(" + arg + ")";
-            if (i + 1 < numArgs) {
-                *str += ", ";
+            if (args[i] == pair.first) {
+                order.push_back(i);
+                break;
             }
         }
+    }
+    if (order.size() != numArgs) {
+        printf("Didn't find members for all args\n");
+        exit(1);
+    }
+    for (size_t i = 0; i < numArgs; ++i) {
+        *str += ", ";
+        string arg = args[order[i]];
+        *str += arg + "(" + arg + ")";
     }
     *str += " {}\n";
 }
 void AstClass::generateHeader(string *str, LData *langData) {
     *str += "class " + identifier;
     if (extends != "") *str += " : public " + extends;
+    else *str += " : public AstNode";
     *str += " {\npublic:\n";
     for (auto const &member : members) {
         member.second->generateMember(str, langData, this);
     }
     for (AstClassConstructor *constr : constructors) {
         constr->generateConstructor(str, langData, this);
+    }
+    if (subClasses.size() > 0) {
+        // Generate constructor with node type
+        *str += "    " + identifier + "(NodeType nodeType) : ";
+        if (extends != "") {
+            *str += extends + "(nodeType)";
+        } else {
+            *str += "AstClass(nodeType)";
+        }
+        *str += " {}\n";
     }
     *str += "};\n";
 }
@@ -1270,9 +1287,21 @@ public:
         string str = "#pragma once\n";
         str += "#include <string>\n";
         str += "#include <vector>\n";
-        // Some externs, needed for parseFile
-        str += "extern FILE *yyin;\n";
-        str += "extern int yyparse();\n";
+        // Create enum with entries for each class
+        str +=  "enum NodeType {\n    ";
+        bool isFirst = true;
+        for (auto const &astClass : langData->astClasses) {
+            if (!isFirst) str += ", ";
+            str += astClass.second->identifier + "Node";
+            isFirst = false;
+        }
+        str += "\n}\n";
+        str +=  "class AstNode {\n"
+                "public:\n"
+                "    NodeType nodeType;\n"
+                "    AstNode(NodeType nodeType) : nodeType(nodeType) {}\n"
+                "    virtual ~AstNode() {}"
+                "}\n";
         for (auto const &astEnum : langData->enums) {
             astEnum.second->generateDefinition(&str, langData);
         }
@@ -1282,6 +1311,9 @@ public:
         for (auto const &astClass : langData->astClasses) {
             astClass.second->generateHeader(&str, langData);
         }
+        // Some externs, needed for parseFile
+        str += "extern FILE *yyin;\n";
+        str += "extern int yyparse();\n";
         // This extern requires ast header
         str += "extern ";
         langData->startAction->startPart->generateGrammarType(&str, langData);
@@ -1310,7 +1342,81 @@ public:
         saveToFile(&str, "gen/" + langData->langKey + ".hpp");
     }
     void generateVisitor() {
-
+        string *str = new string;
+        *str += "#include \"" + langData->langKey + ".hpp\"\n";
+        string className = langData->langKey + "Visitor";
+        // Generate declaration
+        *str += "class " + className + " {\n";
+        *str += "public:\n";
+        for (auto const &astClass : langData->astClasses) {
+            *str += "   virtual void visit" + astClass.second->identifier + "(";
+            *str += astClass.second->identifier + " *node);\n";
+        }
+        *str += "};\n";
+        // Generate definitions
+        for (auto const &astClass : langData->astClasses) {
+            *str += className + "::visit" + astClass.second->identifier + "(";
+            *str += astClass.second->identifier + " *node) {\n";
+            // If this class has subclasses, pass on to more specific
+            // visitor.
+            // It's possibly nice to handle common members here,
+            // but this would require every subclass to be passed
+            // to this visitor for consistency.
+            if (astClass.second->subClasses.size() > 0) {
+                *str += "    switch(elem->nodeType) {\n";
+                for (string subClass : astClass.second->subClasses) {
+                    *str += "        case " + subClass + "Node: ";
+                    *str += "visit" + subClass + "(static_cast<" + subClass + "*>(elem));break;\n";
+                }
+                *str += "        default:break;\n";
+                *str += "    }\n";
+            } else {
+                for (auto const &member : astClass.second->members) {
+                    switch (member.second->typedPart->type) {
+                        case PAST: {
+                            AstClass *memberClass = langData->astClasses[member.second->typedPart->identifier];
+                            *str += "    visit" + memberClass->identifier + "(node->" + member.first + ");\n";
+                        }
+                        break;
+                        case PLIST: {
+                            // Todo list of lists
+                            TypedPartList *listType = static_cast<TypedPartList*>(member.second->typedPart);
+                            // Loop list of ast elements, then
+                            // based on it's node type, cast it and
+                            // pass to it's visitor
+                            if (listType->type->type == PAST) {
+                                TypedPartAst *listAstPart = static_cast<TypedPartAst*>(listType->type);
+                                AstClass *listAstClass = langData->astClasses[listAstPart->astClass];
+                                *str += "    for (";
+                                listType->type->generateGrammarType(str, langData);
+                                *str += " elem : *node->" + member.first + ") {\n";
+                                if (listAstClass->subClasses.size() > 0) {
+                                    // Switch on type
+                                    *str += "        switch(elem->nodeType) {\n"; 
+                                    for (string subClass : listAstClass->subClasses) {
+                                        *str += "            case " + subClass + "Node: ";
+                                        *str += "visit" + subClass + "(static_cast<" + subClass + "*>(elem));break;\n";
+                                    }
+                                    // Also include case with the base type of the list.
+                                    // If a subclass has been found, the switch is breaked on that.
+                                    *str += "            case " + listAstClass->identifier + "Node: visit" + listAstClass->identifier + "(elem);break;\n";
+                                    *str += "            default:break;\n";
+                                    *str += "        }\n";
+                                } else {
+                                    *str += "        visit" + listAstClass->identifier + "(elem);\n";
+                                }
+                                *str += "    }\n";
+                            }
+                        }
+                        break;
+                        default:
+                        break;
+                    }
+                }
+            }
+            *str += "}\n";
+        }
+        saveToFile(str, "gen/" + langData->langKey + "Visitor.hpp");
     }
     void generateTransformer(){}
 
