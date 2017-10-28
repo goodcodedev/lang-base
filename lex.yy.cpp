@@ -901,7 +901,7 @@ case 21:
 /* rule 21 can match eol */
 YY_RULE_SETUP
 #line 40 "../descr.l"
-{ yylval.sval = __strdup(yytext); return STRING; }
+{ yytext[strlen(yytext) - 1]=0; yylval.sval = __strdup(yytext+1); return STRING; }
 	YY_BREAK
 case 22:
 YY_RULE_SETUP

@@ -262,6 +262,7 @@ public:
         : name(name), value(value) {}
 };
 
+class AstClass;
 /**
  * Represents an enum in code
  */
@@ -269,7 +270,10 @@ class AstEnum {
 public:
     string name;
     set<string> members;
+    map<string, string> values;
     AstEnum(string name) : name(name) {}
+    void generateDefinition(string *str, LData *langData);
+    void generateToStringMethod(string *str, LData *langData);
 };
 
 /**
@@ -279,6 +283,7 @@ class AstClassMember {
 public:
     TypedPart *typedPart;
     AstClassMember(TypedPart *typedPart) : typedPart(typedPart) {}
+    void generateMember(string *str, LData *langData, AstClass *astClass);
 };
 
 /**
@@ -288,6 +293,7 @@ class AstClassConstructor {
 public:
     vector<string> args;
     AstClassConstructor() {}
+    void generateConstructor(string *str, LData *langData, AstClass *astClass);
 };
 
 /**
@@ -308,6 +314,8 @@ public:
             // Verify type
         }
     }
+    void generateHeader(string *str, LData *langData);
+    void generateDefinition(string *str, LData *langData);
 };
 
 /**
@@ -399,7 +407,7 @@ void TypedPartList::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartList::generateGrammarType(string *str, LData *langData) {
     *str += "std::vector<";
     type->generateGrammarType(str, langData);
-    *str += ">";
+    *str += ">*";
 }
 
 void RuleAction::generateGrammar(string *str, LData *langData) {
@@ -435,18 +443,18 @@ void ListInitAction::generateGrammarVal(string *str, LData *langData) {
 
 void ListPushAction::generateGrammar(string *str, LData *langData) {
     // Reinterpret as list type to "vec" variable
+    *str += "std::vector<";
     type->generateGrammarType(str, langData);
-    *str += " vec = reinterpret_cast<";
+    *str += ">* vec = reinterpret_cast<std::vector<";
     type->generateGrammarType(str, langData);
-    *str += ">($" + std::to_string(listNum) + ");";
+    *str += ">*>($" + std::to_string(listNum) + ");";
     // Push back element
     *str += "vec->push_back(";
     type->generateGrammarVal(str, elemNum, langData);
-    *str += ");";
-    *str += "$$ = ";
+    *str += ");$$ = ";
     generateGrammarVal(str, langData);
     *str += ";";
-};
+}
 void ListPushAction::generateGrammarVal(string *str, LData *langData) {
     *str += "vec";
 }
@@ -471,7 +479,77 @@ void GrammarType::generateGrammar(string *str, LData *langData) {
     *str += "\n    ;\n";
 }
 
-// LData definitions
+// Code generation
+void AstEnum::generateDefinition(string *str, LData *langData) {
+    *str += "enum " + name + " {\n    ";
+    bool isFirst = true;
+    for (string member : members) {
+        if (!isFirst) *str += ", ";
+        *str += member;
+        isFirst = false;
+    }
+    *str += "\n};\n";
+}
+void AstEnum::generateToStringMethod(string *str, LData *langData) {
+    *str += "static std::string enum" + name + "ToString(" + name + " item) {\n";
+    *str += "    switch (item) {\n";
+    for (string member : members) {
+        *str += "    case " + member + ":";
+        *str += "return \"" + values[member] + "\";\n";
+    }
+    *str += "    default: return \"\";\n";
+    *str += "    }\n}\n";
+}
+void AstClassMember::generateMember(string *str, LData *langData, AstClass *astClass) {
+    *str += "    ";
+    typedPart->generateGrammarType(str, langData);
+    *str += " " + typedPart->alias + ";\n";
+}
+void AstClassConstructor::generateConstructor(string *str, LData *langData, AstClass *astClass) {
+    *str += "    ";
+    *str += astClass->identifier + "(";
+    size_t numArgs = args.size();
+    for (size_t i = 0; i < numArgs; ++i) {
+        if (astClass->members.count(args[i]) == 0) {
+            printf("Member not found");
+            exit(1);
+        }
+        AstClassMember *member = astClass->members[args[i]];
+        member->typedPart->generateGrammarType(str, langData);
+        *str += " " + args[i];
+        if (i + 1 < numArgs) {
+            *str += ", ";
+        }
+    }
+    *str += ")";
+    // Initialization list
+    if (numArgs > 0) {
+        *str += " : ";
+        for (size_t i = 0; i < numArgs; ++i) {
+            string arg = args[i];
+            *str += arg + "(" + arg + ")";
+            if (i + 1 < numArgs) {
+                *str += ", ";
+            }
+        }
+    }
+    *str += " {}\n";
+}
+void AstClass::generateHeader(string *str, LData *langData) {
+    *str += "class " + identifier;
+    if (extends != "") *str += " : public " + extends;
+    *str += " {\n";
+    for (auto const &member : members) {
+        member.second->generateMember(str, langData, this);
+    }
+    for (AstClassConstructor *constr : constructors) {
+        constr->generateConstructor(str, langData, this);
+    }
+    *str += "};\n";
+}
+void AstClass::generateDefinition(string *str, LData *langData) {
+
+}
 
 TokenData* LData::getBuiltInToken(string identifier) {
     if (identifier == "LPAREN") return new TokenData(NONE, "LPAREN", "\\(");
@@ -493,6 +571,9 @@ void LData::addBuiltInToken(string identifier) {
     }
     // Add built in token
     tokenData.emplace(identifier, builtIn);
+    if (builtIn->type != NONE) {
+        tokenTypes.insert(builtIn->type);
+    }
 }
 AstClass* LData::ensureClass(string className) {
     if (astClasses.count(className) == 0) astClasses.emplace(className, new AstClass(className));
@@ -879,6 +960,7 @@ public:
         AstEnum* astEnum = langData->ensureEnum(node->typeDecl->identifier);
         for (EnumDeclNode *enumDecl : *node->nodes) {
             astEnum->members.insert(enumDecl->identifier);
+            astEnum->values.emplace(enumDecl->identifier, enumDecl->regex);
         }
     }
 
@@ -971,6 +1053,14 @@ class SourceGenerator {
 public:
     LData *langData;
     SourceGenerator(LData *langData) : langData(langData) {}
+
+    void saveToFile(string *str, string fileName) {
+        std::ofstream f;
+        f.open(std::string(PROJECT_ROOT) + "/" + fileName);
+        f << *str;
+        printf("%s", str->c_str());
+        f.close();
+    }
     // Generate flex file
     void generateLexFile() {
         string str = "";
@@ -1004,11 +1094,7 @@ public:
         }
         str +=  "%%\n"
                 "int yywrap() { return 1; }\n";
-        std::ofstream lexFile;
-        lexFile.open(std::string(PROJECT_ROOT) + "/test-lang.l");
-        lexFile << str;
-        lexFile.close();
-        printf("%s", str.c_str());
+        saveToFile(&str, "test-lang.l");
     }
     // Generate bison grammar
     void generateGrammarFile() {
@@ -1067,25 +1153,30 @@ public:
         }
         str += "%%\n";
         // Add rules
-        for (auto const &grammar : langData->enumGrammarTypes) {
-            grammar.second->generateGrammar(&str, langData);
-        }
         for (auto const &grammar : langData->astGrammarTypes) {
             grammar.second->generateGrammar(&str, langData);
         }
         for (auto const &grammar : langData->listGrammarTypes) {
             grammar.second->generateGrammar(&str, langData);
         }
-        std::ofstream grammarFile;
-        grammarFile.open(std::string(PROJECT_ROOT) + "/test-lang.y");
-        grammarFile << str;
-        grammarFile.close();
-
-        printf("%s", str.c_str());
+        for (auto const &grammar : langData->enumGrammarTypes) {
+            grammar.second->generateGrammar(&str, langData);
+        }
+        saveToFile(&str, "test-lang.y");
     }
     // Generate c++ classes, enums etc
     void generateAstClasses() {
-
+        string str = "";
+        for (auto const &astEnum : langData->enums) {
+            astEnum.second->generateDefinition(&str, langData);
+        }
+        for (auto const &astEnum : langData->enums) {
+            astEnum.second->generateToStringMethod(&str, langData);
+        }
+        for (auto const &astClass : langData->astClasses) {
+            astClass.second->generateHeader(&str, langData);
+        }
+        saveToFile(&str, "test-lang.hpp");
     }
     void generateVisitor() {
 

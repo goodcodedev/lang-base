@@ -9,12 +9,12 @@
 %option yylineno
 %%
 \, { return COMMA; }
-"int" { return INT; }
+int { return INT; }
 \{ { return LBRACE; }
 \( { return LPAREN; }
 \} { return RBRACE; }
 \) { return RPAREN; }
-"void" { return VOID; }
+void { return VOID; }
 [_a-zA-Z][0-9_a-zA-Z]* { yylval.sval = __strdup(yytext); return identifier; }
 [1-9][0-9]* { yylval.ival = atoi(yytext); return intConst; }
 %%

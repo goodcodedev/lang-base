@@ -37,7 +37,7 @@ float {return TOKEN_FLOAT; }
 \< { return LBRACKET; }
 \> { return RBRACKET; }
 {identifier} { yylval.sval = __strdup(yytext); return IDENTIFIER; }
-\"(\\.|[^"\\])*\" { yylval.sval = __strdup(yytext); return STRING; }
+\"(\\.|[^"\\])*\" { yytext[strlen(yytext) - 1]=0; yylval.sval = __strdup(yytext+1); return STRING; }
 
 %%
 
