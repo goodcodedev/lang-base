@@ -512,7 +512,7 @@ void TypedPartAst::generateGrammarType(string *str, LData *langData) {
     *str += astClass + "*";
 }
 void TypedPartAst::addToVisitor(ToSourceVisitor *visitor) {
-    visitor->code += "str += visit" + astClass + "(node->" + getMemberKey() + ");\n";
+    visitor->code += "visit" + astClass + "(node->" + getMemberKey() + ");\n";
 }
 
 void TypedPartList::generateGrammarVal(string *str, int num, LData *langData) {
@@ -741,6 +741,8 @@ TokenData* LData::getBuiltInToken(string identifier) {
     if (identifier == "LBRACE") return new TokenData(NONE, "LBRACE", "\\{");
     if (identifier == "RBRACE") return new TokenData(NONE, "RBRACE", "\\}");
     if (identifier == "COMMA") return new TokenData(NONE, "COMMA", "\\,");
+    if (identifier == "SEMICOLON") return new TokenData(NONE, "SEMICOLON", "\\;");
+    if (identifier == "EQUAL") return new TokenData(NONE, "EQUAL", "\\=");
     if (identifier == "intConst") return new TokenData(TINT, "intConst", "[1-9][0-9]*");
     if (identifier == "identifier") return new TokenData(TSTRING, "identifier", "[_a-zA-Z][0-9_a-zA-Z]*");
     // Whitespace token
@@ -1069,8 +1071,10 @@ public:
                 int num = 0;
                 vector<string> tokenList;
                 for (AstPart *part : *astDef->nodes) {
-                    ++num;
                     TypedPart *typedPart = langData->getTypedPart(part->identifier);
+                    // Skip WS (whitespace) token as this is ignored in grammar
+                    if (typedPart->type == PTOKEN && typedPart->identifier == "WS") continue;
+                    ++num;
                     // Just setting alias here
                     // Used as key to ast member and constructor args
                     typedPart->alias = (part->alias != "") ? part->alias : part->identifier;
@@ -1420,6 +1424,19 @@ public:
                "}\n";
         saveToFile(&str, "gen/" + langData->langKey + ".y");
     }
+
+    // Recursive to ensure parent classes
+    // are added before extending classes
+    void generateHeaderClass(string *str, string astClass, set<string> *addedClasses) {
+        if (addedClasses->find(astClass) != addedClasses->end()) return;
+        AstClass *cls = langData->astClasses[astClass];
+        if (cls->extends != "") {
+            generateHeaderClass(str, cls->extends, addedClasses);
+        }
+        cls->generateHeader(str, langData);
+        addedClasses->insert(astClass);
+    }
+
     // Generate c++ classes, enums etc
     void generateAstClasses() {
         string str = "#pragma once\n";
@@ -1447,8 +1464,15 @@ public:
                 "    AstNode(NodeType nodeType) : nodeType(nodeType) {}\n"
                 "    virtual ~AstNode() {}\n"
                 "};\n";
+        // Forward declare classes
         for (auto const &astClass : langData->astClasses) {
-            astClass.second->generateHeader(&str, langData);
+            str += "class " + astClass.first + ";\n";
+        }
+        // Recursive method to ensure parent classes
+        // are added before subclasses.
+        set<string> addedClasses;
+        for (auto const &astClass : langData->astClasses) {
+            generateHeaderClass(&str, astClass.first, &addedClasses);
         }
         // Some externs, needed for parseFile
         str += "extern FILE *yyin;\n";
@@ -1513,7 +1537,8 @@ public:
                 for (auto const &member : astClass.second->members) {
                     switch (member.second->typedPart->type) {
                         case PAST: {
-                            AstClass *memberClass = langData->astClasses[member.second->typedPart->identifier];
+                            TypedPartAst *astPart = static_cast<TypedPartAst*>(member.second->typedPart);
+                            AstClass *memberClass = langData->astClasses[astPart->astClass];
                             *str += "    visit" + memberClass->identifier + "(node->" + member.first + ");\n";
                         }
                         break;
