@@ -3,7 +3,7 @@ enum Type {
     VOID "void",
     INT "int"
 }
-ast Function (Type identifier LPAREN argExprs RPAREN LBRACE RBRACE)
+ast Function (Type WS identifier LPAREN argExprs RPAREN LBRACE RBRACE)
 ast IntExpr (intConst)
 ast expr:Expression {
     IntExpr,

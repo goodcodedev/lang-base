@@ -54,6 +54,28 @@ enum PartType {
 class LData;
 
 /**
+ * Represents a visitor case in generated ToSourceVisitor
+ * Needs to capture different cases and
+ * possibly act differently on variations.
+ * So there can be several visitors (one for each case)
+ * for an ast class todo
+ * Possibly solve this by registering
+ * a rule identifier (serialized token list), or checking for default valued
+ * fields. Possibly this would need more token values
+ * to be captured.
+ * Another approach is to systematically branch
+ * on rule tokens.
+ */
+class ToSourceVisitor {
+public:
+    string astClass;
+    LData *langData;
+    string code;
+    ToSourceVisitor(string astClass, LData *langData)
+        : astClass(astClass), langData(langData) {}
+};
+
+/**
  * Grammar rule part with derived type information.
  * Tagged with any of PartType enum
  */
@@ -98,6 +120,7 @@ public:
             return identifier;
         }
     }
+    virtual void addToVisitor(ToSourceVisitor *visitor) = 0;
 };
 
 // Token part
@@ -107,6 +130,7 @@ public:
         : TypedPart(PTOKEN, identifier) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
+    void addToVisitor(ToSourceVisitor *visitor);
 };
 // Prim token part
 class TypedPartPrim : public TypedPart {
@@ -115,6 +139,7 @@ public:
         : TypedPart(type, identifier) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
+    void addToVisitor(ToSourceVisitor *visitor);
 };
 // Enum part
 // These are stored as integers
@@ -125,6 +150,7 @@ public:
         : TypedPart(PENUM, identifier), enumKey(enumKey) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
+    void addToVisitor(ToSourceVisitor *visitor);
 };
 // Ast part
 class TypedPartAst : public TypedPart {
@@ -134,16 +160,20 @@ public:
         : TypedPart(PAST, identifier), astClass(astClass) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
+    void addToVisitor(ToSourceVisitor *visitor);
 };
 // List part
 class TypedPartList : public TypedPart {
 public:
     // Little mismatch to represent all and nested types
     TypedPart *type;
-    TypedPartList(string identifier, TypedPart *type) 
-        : TypedPart(PLIST, identifier), type(type) {}
+    TypedPart *sep;
+    bool sepBetween;
+    TypedPartList(string identifier, TypedPart *type, TypedPart *sep, bool sepBetween) 
+        : TypedPart(PLIST, identifier), type(type), sep(sep), sepBetween(sepBetween) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
+    void addToVisitor(ToSourceVisitor *visitor);
 };
 
 /**
@@ -281,6 +311,8 @@ class ListGrammarType : public GrammarType {
 public:
     // Little mismatch to represent all and nested types
     TypedPart *type;
+    TypedPart *sep;
+    bool sepBetween;
     ListGrammarType(string key) : GrammarType(key) {}
 };
 
@@ -410,6 +442,22 @@ void TypedPartToken::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartToken::generateGrammarType(string *str, LData *langData) {
     *str += "std::string";
 }
+void TypedPartToken::addToVisitor(ToSourceVisitor *visitor) {
+    string regex = visitor->langData->tokenData[identifier]->regex;
+    // Currently handles simple regexes
+    // If the regex result is variable, it needs to
+    // be captured and put into ast class
+    string cleaned;
+    // Token can be the WS token containing a space
+    // and meant to signal whitespace is needed
+    // in source code.
+    for (size_t i = 0; i < regex.size(); ++i) {
+        if (regex[i] != '\\') {
+            cleaned += regex[i];
+        }
+    }
+    visitor->code += "str += \"" + cleaned + "\";\n";
+}
 
 void TypedPartPrim::generateGrammarVal(string *str, int num, LData *langData) {
     *str += "$" + std::to_string(num);
@@ -429,6 +477,23 @@ void TypedPartPrim::generateGrammarType(string *str, LData *langData) {
         *str += "UNRECOGNIZED PRIM TYPE";
     }
 }
+void TypedPartPrim::addToVisitor(ToSourceVisitor *visitor) {
+    switch (type) {
+        case PSTRING:
+        visitor->code += "str += node->" + getMemberKey() + ";\n";
+        break;
+        case PINT:
+        visitor->code += "str += std::to_string(node->" + getMemberKey() + ");\n";
+        break;
+        case PFLOAT:
+        visitor->code += "str += std::to_string(node->" + getMemberKey() + ");\n";
+        break;
+        default: {
+            printf("Unrecognized prim type in addToVisitor\n");
+            exit(1);
+        }
+    }
+}
 
 void TypedPartEnum::generateGrammarVal(string *str, int num, LData *langData) {
     *str += "static_cast<" + enumKey + ">($" + std::to_string(num) + ")";
@@ -436,12 +501,18 @@ void TypedPartEnum::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartEnum::generateGrammarType(string *str, LData *langData) {
     *str += enumKey;
 }
+void TypedPartEnum::addToVisitor(ToSourceVisitor *visitor) {
+    visitor->code += "str += enum" + identifier + "ToString(node->" + getMemberKey() + ");\n";
+}
 
 void TypedPartAst::generateGrammarVal(string *str, int num, LData *langData) {
     *str += "reinterpret_cast<" + astClass + "*>($" + std::to_string(num) + ")";
 }
 void TypedPartAst::generateGrammarType(string *str, LData *langData) {
     *str += astClass + "*";
+}
+void TypedPartAst::addToVisitor(ToSourceVisitor *visitor) {
+    visitor->code += "str += visit" + astClass + "(node->" + getMemberKey() + ");\n";
 }
 
 void TypedPartList::generateGrammarVal(string *str, int num, LData *langData) {
@@ -453,6 +524,28 @@ void TypedPartList::generateGrammarType(string *str, LData *langData) {
     *str += "std::vector<";
     type->generateGrammarType(str, langData);
     *str += ">*";
+}
+void TypedPartList::addToVisitor(ToSourceVisitor *visitor) {
+    if (type->type == PAST) {
+        TypedPartAst *astType = static_cast<TypedPartAst*>(type);
+        visitor->code += "for (";
+        type->generateGrammarType(&visitor->code, visitor->langData);
+        string memberKey = getMemberKey();
+        visitor->code += " child : *node->" + memberKey + ") {\n";
+        if (sepBetween) {
+            visitor->code += "if (child != node->" + memberKey + "->front()) {\n";
+            sep->addToVisitor(visitor);
+            visitor->code += "}\n";
+        }
+        visitor->code += "visit" + astType->astClass + "(child);\n";
+        if (!sepBetween) {
+            sep->addToVisitor(visitor);
+        }
+        visitor->code += "}\n";
+    } else {
+        printf("Currently only ast supported");
+        exit(1);
+    }
 }
 
 void RuleAction::generateGrammar(string *str, LData *langData) {
@@ -516,6 +609,12 @@ void StartAction::generateGrammarVal(string *str, LData *langData) {
 void GrammarRule::generateGrammar(string *str, LData *langData) {
     for (string token : tokenList) {
         TypedPart *typed = langData->getTypedPart(token);
+        if (typed->identifier == "WS") {
+            // Ignore WS token used to
+            // signal whitespace is needed
+            // in source
+            continue;
+        }
         *str += " " + typed->getGrammarToken();
     }
     *str += " { ";
@@ -626,7 +725,7 @@ void AstClass::generateHeader(string *str, LData *langData) {
         if (extends != "") {
             *str += extends + "(nodeType)";
         } else {
-            *str += "AstClass(nodeType)";
+            *str += "AstNode(nodeType)";
         }
         *str += " {}\n";
     }
@@ -644,6 +743,10 @@ TokenData* LData::getBuiltInToken(string identifier) {
     if (identifier == "COMMA") return new TokenData(NONE, "COMMA", "\\,");
     if (identifier == "intConst") return new TokenData(TINT, "intConst", "[1-9][0-9]*");
     if (identifier == "identifier") return new TokenData(TSTRING, "identifier", "[_a-zA-Z][0-9_a-zA-Z]*");
+    // Whitespace token
+    // Not added to rules currently
+    // Used when whitespace is needed in ToString source
+    if (identifier == "WS") return new TokenData(NONE, "WS", " ");
     return nullptr;
 }
 // Add built in token or fail
@@ -727,7 +830,9 @@ TypedPart* LData::getTypedPart(string identifier) {
     } else if (listGrammarTypes.count(identifier) != 0) {
         return new TypedPartList(
             identifier,
-            listGrammarTypes[identifier]->type
+            listGrammarTypes[identifier]->type,
+            listGrammarTypes[identifier]->sep,
+            listGrammarTypes[identifier]->sepBetween
         );
     } else if (tokenData.count(identifier) != 0) {
         return new TypedPartToken(identifier);
@@ -893,6 +998,8 @@ public:
             return;
         }
         grammarType->type = listType;
+        grammarType->sep = sepToken;
+        grammarType->sepBetween = sepBetween;
     }
 };
 // Builds rules
@@ -992,26 +1099,9 @@ public:
     }
     void visitList(ListNode *node) {
         ListGrammarType *grammar = langData->ensureListGrammar(node->identifier);
-        TypedPart *typed1 = langData->getTypedPart(node->astKey);
-        TypedPart *typed2 = langData->getTypedPart(node->tokenSep);
-        if (typed1 == nullptr || typed2 == nullptr) {
-            printf("List key not found");
-            exit(1);
-        }
-        // Separator between or at end
-        TypedPart *listType;
-        TypedPart *sepToken;
-        bool sepBetween;
-        if (typed1->type == PTOKEN) {
-            sepBetween = true;
-            sepToken = typed1;
-            listType = typed2;
-        } else {
-            sepBetween = false;
-            sepToken = typed2;
-            listType = typed1;
-        }
-        grammar->type = listType;
+        TypedPart *listType = grammar->type;
+        TypedPart *sepToken = grammar->sep;
+        bool sepBetween = grammar->sepBetween;
         // Init list
         GrammarRule *initRule = new GrammarRule();
         initRule->action = new ListInitAction(listType);
@@ -1144,6 +1234,44 @@ public:
     }
 };
 
+/**
+ * Generates toSource visitor for language
+ */
+class ToSourceGenVisitor : public DescrVisitor {
+public:
+    LData *langData;
+    map<string, ToSourceVisitor*> visitors;
+    ToSourceGenVisitor(LData *langData)
+        : langData(langData) {}
+    ToSourceVisitor* getToSourceVisitor(string astClass) {
+        if (visitors.count(astClass) == 0) {
+            visitors.emplace(astClass, new ToSourceVisitor(astClass, langData));
+        }
+        return visitors[astClass];
+    }
+    void visitAst(AstNode *node) {
+        string baseClass = node->typeDecl->identifier;
+        for (AstDef *def : *node->nodes) {
+            string defClass = baseClass;
+            // Identifier can refer to other ast node
+            if (def->identifier != "") {
+                TypedPart *idPart = langData->getTypedPart(def->identifier);
+                if (idPart != nullptr && idPart->type == PAST) {
+                    // Let other ast visit handle this
+                    continue;
+                } else {
+                    defClass = def->identifier;
+                }
+            }
+            ToSourceVisitor *visitor = getToSourceVisitor(defClass);
+            for (AstPart *defPart : *def->nodes) {
+                TypedPart *part = langData->getTypedPart(defPart->identifier);
+                part->addToVisitor(visitor);
+            }
+        }
+    }
+};
+
 class SourceGenerator {
 public:
     LData *langData;
@@ -1174,6 +1302,11 @@ public:
                 "%%\n";
         for (auto const &pair : langData->tokenData) {
             TokenData *token = pair.second;
+            if (token->key == "WS") {
+                // Used to signal whitespace needed
+                // in source code
+                continue;
+            }
             switch (token->type) {
                 case NONE:
                 str += token->regex + " { return " + token->getGrammarToken() + "; }\n";
@@ -1226,6 +1359,11 @@ public:
         // Tokens
         for (auto const &pair : langData->tokenData) {
             TokenData *token = pair.second;
+            if (token->key == "WS") {
+                // Used to signal whitespace needed
+                // in source code
+                continue;
+            }
             switch (token->type) {
                 case NONE: str += "%token " + token->getGrammarToken() + "\n"; break;
                 case TINT: str += "%token <ival> " + token->getGrammarToken() + "\n"; break;
@@ -1295,19 +1433,20 @@ public:
             str += astClass.second->identifier + "Node";
             isFirst = false;
         }
-        str += "\n}\n";
-        str +=  "class AstNode {\n"
-                "public:\n"
-                "    NodeType nodeType;\n"
-                "    AstNode(NodeType nodeType) : nodeType(nodeType) {}\n"
-                "    virtual ~AstNode() {}"
-                "}\n";
+        str += "\n};\n";
         for (auto const &astEnum : langData->enums) {
             astEnum.second->generateDefinition(&str, langData);
         }
         for (auto const &astEnum : langData->enums) {
             astEnum.second->generateToStringMethod(&str, langData);
         }
+        // AstNode base class with nodeType
+        str +=  "class AstNode {\n"
+                "public:\n"
+                "    NodeType nodeType;\n"
+                "    AstNode(NodeType nodeType) : nodeType(nodeType) {}\n"
+                "    virtual ~AstNode() {}\n"
+                "};\n";
         for (auto const &astClass : langData->astClasses) {
             astClass.second->generateHeader(&str, langData);
         }
@@ -1355,7 +1494,7 @@ public:
         *str += "};\n";
         // Generate definitions
         for (auto const &astClass : langData->astClasses) {
-            *str += className + "::visit" + astClass.second->identifier + "(";
+            *str += "void " + className + "::visit" + astClass.second->identifier + "(";
             *str += astClass.second->identifier + " *node) {\n";
             // If this class has subclasses, pass on to more specific
             // visitor.
@@ -1363,10 +1502,10 @@ public:
             // but this would require every subclass to be passed
             // to this visitor for consistency.
             if (astClass.second->subClasses.size() > 0) {
-                *str += "    switch(elem->nodeType) {\n";
+                *str += "    switch(node->nodeType) {\n";
                 for (string subClass : astClass.second->subClasses) {
                     *str += "        case " + subClass + "Node: ";
-                    *str += "visit" + subClass + "(static_cast<" + subClass + "*>(elem));break;\n";
+                    *str += "visit" + subClass + "(static_cast<" + subClass + "*>(node));break;\n";
                 }
                 *str += "        default:break;\n";
                 *str += "    }\n";
@@ -1390,21 +1529,7 @@ public:
                                 *str += "    for (";
                                 listType->type->generateGrammarType(str, langData);
                                 *str += " elem : *node->" + member.first + ") {\n";
-                                if (listAstClass->subClasses.size() > 0) {
-                                    // Switch on type
-                                    *str += "        switch(elem->nodeType) {\n"; 
-                                    for (string subClass : listAstClass->subClasses) {
-                                        *str += "            case " + subClass + "Node: ";
-                                        *str += "visit" + subClass + "(static_cast<" + subClass + "*>(elem));break;\n";
-                                    }
-                                    // Also include case with the base type of the list.
-                                    // If a subclass has been found, the switch is breaked on that.
-                                    *str += "            case " + listAstClass->identifier + "Node: visit" + listAstClass->identifier + "(elem);break;\n";
-                                    *str += "            default:break;\n";
-                                    *str += "        }\n";
-                                } else {
-                                    *str += "        visit" + listAstClass->identifier + "(elem);\n";
-                                }
+                                *str += "        visit" + listAstClass->identifier + "(elem);\n";
                                 *str += "    }\n";
                             }
                         }
@@ -1417,6 +1542,24 @@ public:
             *str += "}\n";
         }
         saveToFile(str, "gen/" + langData->langKey + "Visitor.hpp");
+    }
+    void generateToSource(SourceNode *source) {
+        string *str = new string;
+        *str += "#include \"" + langData->langKey + "Visitor.hpp\"\n";
+        *str += "#include <string>\n";
+        *str += "class " + langData->langKey + "ToSource ";
+        *str += ": public " + langData->langKey + "Visitor {\n";
+        *str += "public:\n";
+        *str += "std::string str;\n";
+        ToSourceGenVisitor sourceGenVisitor = ToSourceGenVisitor(langData);
+        sourceGenVisitor.visitSource(source);
+        for (auto const &visitor : sourceGenVisitor.visitors) {
+            *str += "void visit" + visitor.first + "(" + visitor.first + "* node) {\n";
+            *str += visitor.second->code;
+            *str += "}\n";
+        }
+        *str += "};\n";
+        saveToFile(str, "gen/" + langData->langKey + "ToSource.hpp");
     }
     void generateTransformer(){}
 
@@ -1499,7 +1642,8 @@ void genFiles(string folder, string langKey) {
 	sourceGen->generateLexFile();
 	sourceGen->generateGrammarFile();
 	sourceGen->generateAstClasses();
-	sourceGen->generateVisitor();
+    sourceGen->generateVisitor();
+    sourceGen->generateToSource(result);
 	sourceGen->generateTransformer();
 	sourceGen->runFlexBison();
 }
