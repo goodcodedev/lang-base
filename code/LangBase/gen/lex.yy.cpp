@@ -1,6 +1,6 @@
-#line 2 "../lex.yy.cpp"
+#line 2 "../code/LangBase/gen/lex.yy.cpp"
 
-#line 4 "../lex.yy.cpp"
+#line 4 "../code/LangBase/gen/lex.yy.cpp"
 
 #define  YY_INT_ALIGNED short int
 
@@ -507,8 +507,8 @@ int yy_flex_debug = 0;
 #define YY_MORE_ADJ 0
 #define YY_RESTORE_YY_MORE_OFFSET
 char *yytext;
-#line 1 "../descr.l"
-#line 2 "../descr.l"
+#line 1 "../code/LangBase/descr.l"
+#line 2 "../code/LangBase/descr.l"
 #include "descr.tab.h"
 #define register      // Deprecated in C++11.
 #ifdef _WIN32
@@ -517,7 +517,7 @@ char *yytext;
 	#define __strdup strdup
 #endif
 
-#line 521 "../lex.yy.cpp"
+#line 521 "../code/LangBase/gen/lex.yy.cpp"
 
 #define INITIAL 0
 #define COMMENT 1
@@ -700,10 +700,10 @@ YY_DECL
 	register char *yy_cp, *yy_bp;
 	register int yy_act;
     
-#line 17 "../descr.l"
+#line 17 "../code/LangBase/descr.l"
 
 
-#line 707 "../lex.yy.cpp"
+#line 707 "../code/LangBase/gen/lex.yy.cpp"
 
 	if ( !(yy_init) )
 		{
@@ -798,123 +798,123 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 19 "../descr.l"
+#line 19 "../code/LangBase/descr.l"
 BEGIN(COMMENT);
 	YY_BREAK
 case 2:
 /* rule 2 can match eol */
 YY_RULE_SETUP
-#line 20 "../descr.l"
+#line 20 "../code/LangBase/descr.l"
 { }
 	YY_BREAK
 case 3:
 /* rule 3 can match eol */
 YY_RULE_SETUP
-#line 21 "../descr.l"
+#line 21 "../code/LangBase/descr.l"
 { }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 22 "../descr.l"
+#line 22 "../code/LangBase/descr.l"
 BEGIN(INITIAL);
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 24 "../descr.l"
+#line 24 "../code/LangBase/descr.l"
 { return TOKEN; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 25 "../descr.l"
+#line 25 "../code/LangBase/descr.l"
 { return ENUM; }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 26 "../descr.l"
+#line 26 "../code/LangBase/descr.l"
 { return AST; }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 27 "../descr.l"
+#line 27 "../code/LangBase/descr.l"
 { return LIST; }
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 28 "../descr.l"
+#line 28 "../code/LangBase/descr.l"
 {return TOKEN_STRING; }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 29 "../descr.l"
+#line 29 "../code/LangBase/descr.l"
 {return TOKEN_INT; }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 30 "../descr.l"
+#line 30 "../code/LangBase/descr.l"
 {return TOKEN_FLOAT; }
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 31 "../descr.l"
+#line 31 "../code/LangBase/descr.l"
 { return START; }
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 32 "../descr.l"
+#line 32 "../code/LangBase/descr.l"
 { return LEFT_BRACE; }
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 33 "../descr.l"
+#line 33 "../code/LangBase/descr.l"
 { return RIGHT_BRACE; }
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 34 "../descr.l"
+#line 34 "../code/LangBase/descr.l"
 { return LEFT_PAREN; }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 35 "../descr.l"
+#line 35 "../code/LangBase/descr.l"
 { return RIGHT_PAREN; }
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 36 "../descr.l"
+#line 36 "../code/LangBase/descr.l"
 { return COMMA; }
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 37 "../descr.l"
+#line 37 "../code/LangBase/descr.l"
 { return COLON; }
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 38 "../descr.l"
+#line 38 "../code/LangBase/descr.l"
 { return LBRACKET; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 39 "../descr.l"
+#line 39 "../code/LangBase/descr.l"
 { return RBRACKET; }
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 40 "../descr.l"
+#line 40 "../code/LangBase/descr.l"
 { yylval.sval = __strdup(yytext); return IDENTIFIER; }
 	YY_BREAK
 case 22:
 /* rule 22 can match eol */
 YY_RULE_SETUP
-#line 41 "../descr.l"
+#line 41 "../code/LangBase/descr.l"
 { yytext[strlen(yytext) - 1]=0; yylval.sval = __strdup(yytext+1); return STRING; }
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 43 "../descr.l"
+#line 43 "../code/LangBase/descr.l"
 ECHO;
 	YY_BREAK
-#line 918 "../lex.yy.cpp"
+#line 918 "../code/LangBase/gen/lex.yy.cpp"
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(COMMENT):
 	yyterminate();
@@ -1924,7 +1924,7 @@ void yyfree (void * ptr )
 
 #define YYTABLES_NAME "yytables"
 
-#line 43 "../descr.l"
+#line 43 "../code/LangBase/descr.l"
 
 
 

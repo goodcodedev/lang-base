@@ -84,7 +84,7 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 25 "../descr.y"
+#line 27 "../code/LangBase/descr.y"
 {
 	int ival;
 	double fval;
@@ -94,7 +94,7 @@ typedef union YYSTYPE
 	int enm;
 }
 /* Line 1529 of yacc.c.  */
-#line 98 "../descr.tab.h"
+#line 98 "../code/LangBase/gen/descr.tab.h"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1

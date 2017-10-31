@@ -1,6 +1,8 @@
 %{
 #include <stdio.h>
-#include "DescrNode.hpp"
+#include "../DescrNode.hpp"
+
+using namespace LangBase;
 
 extern FILE *yyin;
 void yyerror(const char *s);
@@ -50,8 +52,8 @@ extern int yylineno;
 %token TOKEN_INT
 %token TOKEN_FLOAT
 
-%type <ast> source token_decl enum_def enum_decl ast ast_def ast_part list type_decl start
-%type <vector> nodes enum_decls ast_defs ast_parts
+%type <ast> source token_decl enum_def enum_decl ast ast_def ast_part list type_decl start list_def
+%type <vector> nodes enum_decls ast_defs ast_parts list_defs
 %type <enm> tokenType
 
 %%
@@ -122,7 +124,29 @@ ast_part: IDENTIFIER { $$ = new AstPart($1); }
           | IDENTIFIER COLON IDENTIFIER { $$ = new AstPart($3, $1); }
           ;
 
-list: LIST IDENTIFIER IDENTIFIER IDENTIFIER { $$ = new ListNode($2, $3, $4); };
+list: LIST type_decl IDENTIFIER IDENTIFIER { $$ = new ListNode(re<TypeDecl>($2), $3, $4); }
+    | LIST type_decl LEFT_BRACE list_defs RIGHT_BRACE { 
+        $$ = new ListNode(re<TypeDecl>($2), reinterpret_cast<std::vector<ListDef*>*>($4)); 
+    }
+    ;
+
+list_defs: /* empty */ {
+        $$ = new std::vector<ListDef*>;
+    }
+    | list_defs list_def { $$ = push_node<ListDef>($1, $2); }
+    | list_defs COMMA list_def { $$ = push_node<ListDef>($1, $3); }
+    ;
+list_def: IDENTIFIER { $$ = new ListDef($1, new std::vector<AstPart*>); }
+        | IDENTIFIER LEFT_PAREN ast_parts RIGHT_PAREN { 
+            $$ = new ListDef($1, reinterpret_cast<std::vector<AstPart*>*>($3));
+        }
+        | IDENTIFIER IDENTIFIER LEFT_PAREN ast_parts RIGHT_PAREN {
+            $$ = new ListDef($1, $2, reinterpret_cast<std::vector<AstPart*>*>($4));
+        }
+        | IDENTIFIER LEFT_PAREN ast_parts RIGHT_PAREN IDENTIFIER { 
+            $$ = new ListDef($1, reinterpret_cast<std::vector<AstPart*>*>($3), $5); 
+        }
+        ;
 
 %%
 

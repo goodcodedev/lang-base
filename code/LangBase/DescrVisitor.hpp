@@ -1,6 +1,8 @@
 #pragma once
 #include "DescrNode.hpp"
 
+namespace LangBase {
+
 class DescrVisitor {
 public:
     virtual void visitSource(SourceNode *node) {
@@ -59,8 +61,17 @@ public:
             visitAstDef(astDef);
         }
     }
+    virtual void visitListDef(ListDef *node) {
+        for (AstPart *astPart : *node->nodes) {
+            visitAstPart(astPart);
+        }
+    }
     virtual void visitList(ListNode *node) {
-
+        visitTypeDecl(node->typeDecl);
+        for (ListDef *listDef : *node->nodes) {
+            visitListDef(listDef);
+        }
     }
 
 };
+}

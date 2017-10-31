@@ -3,6 +3,6 @@
 #
 ---
 exports:
-  header-dirs: [ . ]
+  header-dirs: [ code ]
   modules:
-    lang-base: .
+    lang-base: code

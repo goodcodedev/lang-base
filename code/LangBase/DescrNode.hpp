@@ -4,6 +4,8 @@
 #include <stdarg.h>
 #include <iostream>
 
+namespace LangBase {
+
 enum NodeType {
     TOKEN_NODE,
     ENUM_NODE,
@@ -11,6 +13,7 @@ enum NodeType {
     TYPE_DECL_NODE,
     AST_NODE,
     AST_DEF_NODE,
+    LIST_DEF_NODE,
     AST_PART_NODE,
     LIST_NODE,
     SOURCE_NODE,
@@ -49,6 +52,15 @@ public:
             break;
             case LIST_NODE:
             fprintf(stdout, "list ");
+            break;
+            case LIST_DEF_NODE:
+            fprintf(stdout, "list def ");
+            break;
+            case TYPE_DECL_NODE:
+            fprintf(stdout, "type decl ");
+            break;
+            case START_NODE:
+            fprintf(stdout, "start ");
             break;
             case SOURCE_NODE:
             fprintf(stdout, "source ");
@@ -114,6 +126,20 @@ public:
         : DescrNode(AST_PART_NODE), identifier(identifier), alias(alias) {}
 };
 
+class ListDef : public DescrNode {
+public:
+    std::string identifier;
+    std::vector<AstPart*> *nodes;
+    std::string sepBefore;
+    std::string sepAfter;
+    ListDef(std::string identifier, std::vector<AstPart*> *nodes)
+        : DescrNode(LIST_DEF_NODE), identifier(identifier), nodes(nodes) {}
+    ListDef(std::string identifier, std::vector<AstPart*> *nodes, std::string sepAfter)
+        : DescrNode(LIST_DEF_NODE), identifier(identifier), nodes(nodes), sepAfter(sepAfter) {}
+    ListDef(std::string identifier, std::string sepBefore, std::vector<AstPart*> *nodes)
+        : DescrNode(LIST_DEF_NODE), identifier(identifier), nodes(nodes), sepBefore(sepBefore) {}
+};
+
 class AstDef : public DescrNode {
 public:
     std::string identifier;
@@ -132,9 +158,13 @@ public:
 
 class ListNode : public DescrNode {
 public:
-    std::string identifier;
+    TypeDecl *typeDecl;
     std::string astKey;
     std::string tokenSep;
-    ListNode(std::string identifier, std::string astKey, std::string tokenSep) 
-        : DescrNode(LIST_NODE), identifier(identifier), astKey(astKey), tokenSep(tokenSep) {}
+    std::vector<ListDef*> *nodes;
+    ListNode(TypeDecl *typeDecl, std::string astKey, std::string tokenSep) 
+        : DescrNode(LIST_NODE), typeDecl(typeDecl), astKey(astKey), tokenSep(tokenSep), nodes(new std::vector<ListDef*>) {}
+    ListNode(TypeDecl *typeDecl, std::vector<ListDef*> *nodes) 
+        : DescrNode(LIST_NODE), typeDecl(typeDecl), astKey(""), tokenSep(""), nodes(nodes) {}
 };
+}
