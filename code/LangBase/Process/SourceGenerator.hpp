@@ -296,8 +296,8 @@ public:
                                 AstClass *listAstClass = langData->astClasses[listAstPart->astClass];
                                 *str += "    for (";
                                 listType->type->generateGrammarType(str, langData);
-                                *str += " elem : *node->" + member.first + ") {\n";
-                                *str += "        visit" + listAstClass->identifier + "(elem);\n";
+                                *str += " node : *node->" + member.first + ") {\n";
+                                *str += "        visit" + listAstClass->identifier + "(node);\n";
                                 *str += "    }\n";
                             }
                         }
@@ -311,73 +311,161 @@ public:
         }
         saveToFile(str, "gen/" + langData->langKey + "Visitor.hpp");
     }
+
+    // Used to collect classes qualifying for
+    // referred ast key
+    void collectAstClasses(string astKey, set<string> *classes, set<string> *visited) {
+        // Return if already visited
+        if (visited->find(astKey) != visited->end()) return;
+        visited->insert(astKey);
+        AstGrammarType *grammar = langData->astGrammarTypes[astKey];
+        for (AstRuleDef *ruleDef : grammar->ruleDefs) {
+            if (ruleDef->refType != nullptr) {
+                collectAstClasses(ruleDef->refType->identifier, classes, visited);
+            } else {
+                classes->insert(ruleDef->astClass);
+            }
+        }
+    }
+
     void generateToSource(SourceNode *source) {
         string *str = new string;
         *str += "#include \"" + langData->langKey + "Visitor.hpp\"\n";
         *str += "#include <string>\n";
-        *str += "class " + langData->langKey + "ToSource ";
+        string className = langData->langKey + "ToSource";
+        *str += "class " + className + " ";
         *str += ": public " + langData->langKey + "Visitor {\n";
         *str += "public:\n";
-        *str += "std::string str;\n";
+        *str += "    std::string str;\n";
         // Gather cases in grammar
         ToSourceGenVisitor caseVisitor = ToSourceGenVisitor(langData);
         caseVisitor.visitSource(source);
+        // Add declarations for key methods
+        // Class methods defined in visitor base
+        for (auto const &astType : langData->astGrammarTypes) {
+            string astClass = astType.second->astClass;
+            *str += "    void astKey_" + astType.first + "(" + astClass + " *node);\n";
+        }
+        for (auto const &listType : langData->listGrammarTypes) {
+            *str += "    void listKey_" + listType.first + "(std::vector<";
+            listType.second->type->generateGrammarType(str, langData);
+            *str += "> *list);\n"; 
+        }
+        // Class visit decls
+        for (auto const &classCase : caseVisitor.classCases) {
+            *str += "    void visit" + classCase.first + "(" + classCase.first + " *node);\n";
+        }
+        *str += "};\n\n";
         // Go through ast types and list types
         // and generate methods to ToSource these.
         for (auto const &astType : langData->astGrammarTypes) {
             bool isClassKey = astType.first == astType.second->astClass;
+            // Maybe skip those with class key
             string astClass = astType.second->astClass;
-            if (isClassKey) {
-                *str += "void visit" + astClass + "(" + astClass + " *node) {\n";
-            } else {
-                *str += "void visitAstKey_" + astClass + "(" + astClass + " *node) {\n";
-            }
+            *str += "void " + className + "::astKey_" + astType.first + "(" + astClass + " *node) {\n";
+            // Switch and pass to class visitor
+            *str += "    switch (node->nodeType) {\n";
             for (AstRuleDef *ruleDef : astType.second->ruleDefs) {
-                // Generate code for each ruleDef
-                if (caseVisitor.keys[astType.first].size() > 1) {
-                    // Several cases, switch on each
-                    *str += "switch (node->serialized) {\n";
-                    for (ToSourceCase *c : caseVisitor.keys[astType.first]) {
-                        *str += "    case " + c->serialized + ": {";
-                        *str += "    " + c->code;
-                        *str += "\n    }\n    break;\n";
+                if (ruleDef->refType != nullptr) {
+                    set<string> *classes = new set<string>();
+                    set<string> *visited = new set<string>();
+                    collectAstClasses(ruleDef->refType->identifier, classes, visited);
+                    for (string classCase : *classes) {
+                        *str += "        case " + classCase + "Node:\n";
                     }
-                    *str += "}\n";
-                } else if (caseVisitor.keys[astType.first].size() == 1) {
-                    // Only one case, just add code
-                    *str += "    " + caseVisitor.keys[astType.first][0]->code + "\n";
+                    *str += "        astKey_" + ruleDef->refType->identifier + "(static_cast<" + ruleDef->refType->astClass + "*>(node));break;\n";
                 } else {
-                    printf("No cases found for %s\n", astType.first.c_str());
-                    exit(1);
+                    if (caseVisitor.keyedCases[astType.first][ruleDef->astClass].size() > 1) {
+                        printf("Multiple ast cases not implemented");
+                        exit(1);
+                    }
+                    *str += "        case " + ruleDef->astClass + "Node: ";
+                    *str += "visit" + ruleDef->astClass + "(static_cast<" + ruleDef->astClass + "*>(node));break;\n";
                 }
             }
-            *str += "}\n";
+            *str += "    }\n}\n";
         }
         // List types
         for (auto const &listType : langData->listGrammarTypes) {
-            *str += "void visitListKey_" + listType.first + "(" + listType.first + " *node) {\n";
-            for (ListRuleDef *ruleDef : listType.second->ruleDefs) {
-                // Generate code for each ruleDef
-                if (caseVisitor.keys[listType.first].size() > 1) {
-                    // Several cases, switch on each
-                    *str += "switch (node->serialized) {\n";
-                    for (ToSourceCase *c : caseVisitor.keys[listType.first]) {
-                        *str += "    case " + c->serialized + ": {";
-                        *str += "    " + c->code;
-                        *str += "\n    }\n    break;\n";
-                    }
-                    *str += "}\n";
-                } else if (caseVisitor.keys[listType.first].size() == 1) {
-                    // Only one case, just add code
-                    *str += "    " + caseVisitor.keys[listType.first][0]->code + "\n";
+            *str += "void " + className + "::listKey_" + listType.first + "(std::vector<";
+            listType.second->type->generateGrammarType(str, langData);
+            *str += "> *nodes) {\n"; 
+            *str += "    for (";
+            listType.second->type->generateGrammarType(str, langData);
+            *str += " node : *nodes) {\n";
+            if (listType.second->sepBetween) {
+                *str += "        if (node != nodes->front()) {\n";
+                *str += "            str += \"";
+                if (listType.second->sep->type == PTOKEN) {
+                    TypedPartToken *sep = static_cast<TypedPartToken*>(listType.second->sep);
+                    *str += sep->getCleanedVal(langData);
                 } else {
-                    printf("No cases found for %s\n", listType.first.c_str());
+                    printf("Only token separator supported\n");
                     exit(1);
                 }
+                *str += "\";\n        }\n";
+            }
+            *str += "        switch (node->nodeType) {\n";
+            for (ListRuleDef *ruleDef : listType.second->ruleDefs) {
+                // Generate code for each ruleDef
+                string astClass;
+                if (ruleDef->astRule != nullptr) {
+                    astClass = ruleDef->astRule->astClass;
+                    if (ruleDef->astRule->refType != nullptr) {
+                        set<string> *classes = new set<string>();
+                        set<string> *visited = new set<string>();
+                        collectAstClasses(ruleDef->astRule->refType->identifier, classes, visited);
+                        for (string classCase : *classes) {
+                            *str += "            case " + classCase + "Node:\n";
+                        }
+                        *str += "            {\n";
+                        *str += "                astKey_" + ruleDef->astRule->refType->identifier;
+                        *str += "(static_cast<" + ruleDef->astRule->refType->astClass + "*>(node));\n";
+                        if (ruleDef->sepAfter != nullptr) {
+                            if (ruleDef->sepAfter->type == PTOKEN) {
+                                TypedPartToken *sepAfter = static_cast<TypedPartToken*>(ruleDef->sepAfter);
+                                *str += "                str += \"" + sepAfter->getCleanedVal(langData) + "\";\n";
+                            } else {
+                                printf("Only tokens supported as separators\n");
+                                exit(1);
+                            }
+                        }
+                    } else {
+                        if (caseVisitor.keyedCases[listType.first][astClass].size() > 1) {
+                            printf("Multiple cases not supported yet\n");
+                            exit(1);
+                        }
+                        *str += "            case " + astClass + "Node: {\n";
+                        *str += "                visit" + astClass + "(static_cast<" + astClass + "*>(node));\n";
+                        if (ruleDef->sepAfter != nullptr) {
+                            if (ruleDef->sepAfter->type == PTOKEN) {
+                                TypedPartToken *sepAfter = static_cast<TypedPartToken*>(ruleDef->sepAfter);
+                                *str += "                str += \"" + sepAfter->getCleanedVal(langData) + "\";\n";
+                            } else {
+                                printf("Only tokens supported as separators\n");
+                                exit(1);
+                            }
+                        }
+                    }
+                }
+                *str += "                break;\n            }\n";
+            }
+            // Close switch, for loop and function
+            *str += "        }\n    }\n}\n";
+        }
+        // Add all classes from visitor
+        for (auto const &classCase : caseVisitor.classCases) {
+            *str += "void " + className + "::visit" + classCase.first + "(" + classCase.first + " *node) {\n";
+            if (classCase.second.size() == 1) {
+                *str += classCase.second[0]->code;
+                *str += "\n";
+            } else {
+                // Several cases
+                printf("Multiple cases todo");
+                exit(1);
             }
             *str += "}\n";
         }
-        *str += "};\n";
         saveToFile(str, "gen/" + langData->langKey + "ToSource.hpp");
     }
     void generateTransformer(){}

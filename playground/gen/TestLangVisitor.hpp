@@ -27,11 +27,11 @@ void TestLangVisitor::visitExpression(Expression *node) {
     }
 }
 void TestLangVisitor::visitFunction(Function *node) {
-    for (Expression* elem : *node->argExprs) {
-        visitExpression(elem);
+    for (Expression* node : *node->argExprs) {
+        visitExpression(node);
     }
-    for (Statement* elem : *node->statements) {
-        visitStatement(elem);
+    for (Statement* node : *node->statements) {
+        visitStatement(node);
     }
 }
 void TestLangVisitor::visitIdExpr(IdExpr *node) {

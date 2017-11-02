@@ -21,8 +21,8 @@ void TypedPartToken::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartToken::generateGrammarType(string *str, LData *langData) {
     *str += "std::string";
 }
-void TypedPartToken::addToVisitor(ToSourceCase *visitor) {
-    string regex = visitor->langData->tokenData[identifier]->regex;
+string TypedPartToken::getCleanedVal(LData *langData) {
+    string regex = langData->tokenData[identifier]->regex;
     // Currently handles simple regexes
     // If the regex result is variable, it needs to
     // be captured and put into ast class
@@ -35,7 +35,10 @@ void TypedPartToken::addToVisitor(ToSourceCase *visitor) {
             cleaned += regex[i];
         }
     }
-    visitor->code += "str += \"" + cleaned + "\";\n";
+    return cleaned;
+}
+void TypedPartToken::addToVisitor(ToSourceCase *visitor) {
+    visitor->code += "    str += \"" + getCleanedVal(visitor->langData) + "\";\n";
 }
 
 void TypedPartPrim::generateGrammarVal(string *str, int num, LData *langData) {
@@ -81,7 +84,7 @@ void TypedPartEnum::generateGrammarType(string *str, LData *langData) {
     *str += enumKey;
 }
 void TypedPartEnum::addToVisitor(ToSourceCase *visitor) {
-    visitor->code += "str += enum" + identifier + "ToString(node->" + getMemberKey() + ");\n";
+    visitor->code += "    str += enum" + identifier + "ToString(node->" + getMemberKey() + ");\n";
 }
 
 void TypedPartAst::generateGrammarVal(string *str, int num, LData *langData) {
@@ -94,7 +97,7 @@ void TypedPartAst::addToVisitor(ToSourceCase *visitor) {
     if (visitor->isClassKey) {
         visitor->code += "    visit" + astClass + "(node->" + getMemberKey() + ");\n";
     } else {
-        visitor->code += "    astKey_" + visitor->grammarKey + "(node->" + getMemberKey() + ");\n";
+        visitor->code += "    astKey_" + alias + "(node->" + getMemberKey() + ");\n";
     }
 }
 
@@ -109,7 +112,7 @@ void TypedPartList::generateGrammarType(string *str, LData *langData) {
     *str += ">*";
 }
 void TypedPartList::addToVisitor(ToSourceCase *visitor) {
-    visitor->code += "    listKey_" + visitor->grammarKey + "(node->" + getMemberKey() + ");\n";
+    visitor->code += "    listKey_" + identifier + "(node->" + getMemberKey() + ");\n";
     return;
     if (type->type == PAST) {
         TypedPartAst *astType = static_cast<TypedPartAst*>(type);

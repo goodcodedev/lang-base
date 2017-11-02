@@ -70,14 +70,14 @@
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 10 "/Users/gudmund/projects/lang-pg/code/gen/TestLang.y"
+#line 10 "/Users/gudmund/projects/lang-base/playground/gen/TestLang.y"
 {
    void *ptr;
     char *sval;
     int ival;
 }
 /* Line 1529 of yacc.c.  */
-#line 81 "/Users/gudmund/projects/lang-pg/code/gen/TestLang.tab.cpp"
+#line 81 "/Users/gudmund/projects/lang-base/playground/gen/TestLang.tab.cpp"
 	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1

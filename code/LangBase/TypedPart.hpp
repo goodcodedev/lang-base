@@ -77,6 +77,7 @@ public:
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
     void addToVisitor(ToSourceCase *visitor);
+    string getCleanedVal(LData *langData);
 };
 // Prim token part
 class TypedPartPrim : public TypedPart {

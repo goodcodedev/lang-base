@@ -34,16 +34,16 @@ Function: Type identifier_T LPAREN_T argExprs RPAREN_T LBRACE_T statements RBRAC
     ;
 IntExpr: intConst_T { $$ = new IntExpr($1); }
     ;
-expr: IntExpr { $$ = $1; }
+expr: IntExpr { $$ = reinterpret_cast<IntExpr*>($1); }
     | identifier_T { $$ = new IdExpr($1); }
     ;
 argExprs: { $$ = new std::vector<Expression*>; }
-    | argExprs expr { std::vector<Expression*>* vec = reinterpret_cast<std::vector<Expression*>*>($1);vec->push_back($2);$$ = vec; }
-    | argExprs COMMA_T expr { std::vector<Expression*>* vec = reinterpret_cast<std::vector<Expression*>*>($1);vec->push_back($3);$$ = vec; }
+    | argExprs expr { std::vector<Expression*>* vec = reinterpret_cast<std::vector<Expression*>*>($1);vec->push_back(reinterpret_cast<Expression*>($2));$$ = vec; }
+    | argExprs COMMA_T expr { std::vector<Expression*>* vec = reinterpret_cast<std::vector<Expression*>*>($1);vec->push_back(reinterpret_cast<Expression*>($3));$$ = vec; }
     ;
 statements: { $$ = new std::vector<Statement*>; }
     | statements identifier_T EQUAL_T expr SEMICOLON_T { std::vector<Statement*>* vec = reinterpret_cast<std::vector<Statement*>*>($1);vec->push_back(new Assign($2, reinterpret_cast<Expression*>($4)));$$ = vec; }
-    | statements ControlStruct { std::vector<Statement*>* vec = reinterpret_cast<std::vector<Statement*>*>($1);vec->push_back($2);$$ = vec; }
+    | statements ControlStruct { std::vector<Statement*>* vec = reinterpret_cast<std::vector<Statement*>*>($1);vec->push_back(reinterpret_cast<ControlStruct*>($2));$$ = vec; }
     ;
 Type: VOID_T { $$ = VOID; }
     | INT_T { $$ = INT; }

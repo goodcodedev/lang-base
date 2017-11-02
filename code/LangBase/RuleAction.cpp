@@ -20,7 +20,7 @@ void AstConstructionAction::generateGrammarVal(string *str, LData *langData) {
 }
 
 void RefAction::generateGrammarVal(string *str, LData *langData) {
-    *str += "$" + std::to_string(num);
+    ref->generateGrammarVal(str, num, langData);
 }
 
 void EnumValueAction::generateGrammarVal(string *str, LData *langData) {
