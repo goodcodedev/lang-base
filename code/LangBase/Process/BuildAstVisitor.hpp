@@ -16,13 +16,13 @@ public:
         }
     }
 
-    void buildFromRule(GrammarRule *rule, string baseAstName) {
+    void buildFromAction(RuleAction *ruleAction, string baseAstName) {
         // If rule is a ref, register referenced
         // ast class as subclass.
         // Members and constructors are set up when
         // visiting referenced ast node.
-        if (rule->action->type == RARef) {
-            RefAction *refAction = static_cast<RefAction*>(rule->action);
+        if (ruleAction->type == RARef) {
+            RefAction *refAction = static_cast<RefAction*>(ruleAction);
             if (refAction->ref->type != PAST) {
                 printf("Can only handle ref to ast");
                 exit(1);
@@ -31,11 +31,11 @@ public:
             TypedPartAst *refType = static_cast<TypedPartAst*>(refAction->ref);
             langData->ensureSubRelation(baseAstName, refType->astClass);
             return;
-        } else if (rule->action->type != RAAstConstruction) {
+        } else if (ruleAction->type != RAAstConstruction) {
             printf("Can only handle ref and ast construction actions");
             exit(1);
         }
-        AstConstructionAction *action = static_cast<AstConstructionAction*>(rule->action);
+        AstConstructionAction *action = static_cast<AstConstructionAction*>(ruleAction);
         AstClass *ruleClass = langData->ensureSubRelation(baseAstName, action->astClass);
         // Ensure class has members for all args
         for (RuleArg ruleArg : action->args) {
@@ -68,7 +68,7 @@ public:
                 // Perhaps when the ast interface is defined,
                 // reorder could be tried.
                 bool isEqual = true;
-                isEqual = (constr->serialized == rule->serialized);
+                isEqual = (constr->serialized == action->serialized);
                 /*
                 for (size_t i = 0; i < constr->args.size(); ++i) {
                     // Assume correspondance with member field types
@@ -90,7 +90,7 @@ public:
             for (RuleArg ruleArg : action->args) {
                 constr->args.push_back(ruleArg.typedPart->getMemberKey());
             }
-            constr->serialized = rule->serialized;
+            constr->serialized = action->serialized;
             ruleClass->constructors.push_back(constr);
         }
     }
@@ -105,7 +105,7 @@ public:
         // Go through rules and ensure ast classes
         // has needed members and constructors
         for (GrammarRule *rule : grammar->rules) {
-            buildFromRule(rule, baseAstName);
+            buildFromAction(rule->action, baseAstName);
         }
     }
 
@@ -122,7 +122,10 @@ public:
         // Go through rules and ensure ast classes
         // has needed members and constructors
         for (GrammarRule *rule : grammar->rules) {
-            buildFromRule(rule, baseAstName);
+            if (rule->action->type == RAListPush) {
+                ListPushAction *lpAction = static_cast<ListPushAction*>(rule->action);
+                buildFromAction(lpAction->innerAction, baseAstName);
+            }
         }
     }
 };

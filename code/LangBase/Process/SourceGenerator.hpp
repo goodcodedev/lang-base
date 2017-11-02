@@ -5,6 +5,7 @@
 #include "RegisterKeysVisitor.hpp"
 #include "RegisterListKeysVisitor.hpp"
 #include "AddBuiltInTokens.hpp"
+#include "BuildRuleDefsVisitor.hpp"
 #include "BuildRulesVisitor.hpp"
 #include "BuildAstVisitor.hpp"
 #include "ToSourceGenVisitor.hpp"
@@ -318,11 +319,62 @@ public:
         *str += ": public " + langData->langKey + "Visitor {\n";
         *str += "public:\n";
         *str += "std::string str;\n";
-        ToSourceGenVisitor sourceGenVisitor = ToSourceGenVisitor(langData);
-        sourceGenVisitor.visitSource(source);
-        for (auto const &visitor : sourceGenVisitor.visitors) {
-            *str += "void visit" + visitor.first + "(" + visitor.first + "* node) {\n";
-            //*str += visitor.second.code;
+        // Gather cases in grammar
+        ToSourceGenVisitor caseVisitor = ToSourceGenVisitor(langData);
+        caseVisitor.visitSource(source);
+        // Go through ast types and list types
+        // and generate methods to ToSource these.
+        for (auto const &astType : langData->astGrammarTypes) {
+            bool isClassKey = astType.first == astType.second->astClass;
+            string astClass = astType.second->astClass;
+            if (isClassKey) {
+                *str += "void visit" + astClass + "(" + astClass + " *node) {\n";
+            } else {
+                *str += "void visitAstKey_" + astClass + "(" + astClass + " *node) {\n";
+            }
+            for (AstRuleDef *ruleDef : astType.second->ruleDefs) {
+                // Generate code for each ruleDef
+                if (caseVisitor.keys[astType.first].size() > 1) {
+                    // Several cases, switch on each
+                    *str += "switch (node->serialized) {\n";
+                    for (ToSourceCase *c : caseVisitor.keys[astType.first]) {
+                        *str += "    case " + c->serialized + ": {";
+                        *str += "    " + c->code;
+                        *str += "\n    }\n    break;\n";
+                    }
+                    *str += "}\n";
+                } else if (caseVisitor.keys[astType.first].size() == 1) {
+                    // Only one case, just add code
+                    *str += "    " + caseVisitor.keys[astType.first][0]->code + "\n";
+                } else {
+                    printf("No cases found for %s\n", astType.first.c_str());
+                    exit(1);
+                }
+            }
+            *str += "}\n";
+        }
+        // List types
+        for (auto const &listType : langData->listGrammarTypes) {
+            *str += "void visitListKey_" + listType.first + "(" + listType.first + " *node) {\n";
+            for (ListRuleDef *ruleDef : listType.second->ruleDefs) {
+                // Generate code for each ruleDef
+                if (caseVisitor.keys[listType.first].size() > 1) {
+                    // Several cases, switch on each
+                    *str += "switch (node->serialized) {\n";
+                    for (ToSourceCase *c : caseVisitor.keys[listType.first]) {
+                        *str += "    case " + c->serialized + ": {";
+                        *str += "    " + c->code;
+                        *str += "\n    }\n    break;\n";
+                    }
+                    *str += "}\n";
+                } else if (caseVisitor.keys[listType.first].size() == 1) {
+                    // Only one case, just add code
+                    *str += "    " + caseVisitor.keys[listType.first][0]->code + "\n";
+                } else {
+                    printf("No cases found for %s\n", listType.first.c_str());
+                    exit(1);
+                }
+            }
             *str += "}\n";
         }
         *str += "};\n";
@@ -396,11 +448,13 @@ public:
         auto keysVisit = new RegisterKeysVisitor(langData);
         auto listVisit = new RegisterListKeysVisitor(langData);
         auto builtInVisit = new AddBuiltInTokens(langData);
+        auto ruleDefsVisit = new BuildRuleDefsVisitor(langData);
         auto rulesVisit = new BuildRulesVisitor(langData);
         auto astVisit = new BuildAstVisitor(langData);
         keysVisit->visitSource(result);
         builtInVisit->visitSource(result);
         listVisit->visitSource(result);
+        ruleDefsVisit->visitSource(result);
         rulesVisit->visitSource(result);
         astVisit->visitSource(result);
         SourceGenerator *sourceGen = new SourceGenerator(langData, folder);

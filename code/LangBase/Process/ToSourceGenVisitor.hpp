@@ -22,13 +22,15 @@ using std::map;
  * Another approach is to systematically branch
  * on rule tokens.
  */
-class ToSourceVisitor {
+class ToSourceCase {
 public:
-    string astClass;
     LData *langData;
     string code;
-    ToSourceVisitor(string astClass, LData *langData)
-        : astClass(astClass), langData(langData) {}
+    string serialized;
+    string grammarKey;
+    bool isClassKey;
+    ToSourceCase(LData *langData, string grammarKey, bool isClassKey)
+        : langData(langData), grammarKey(grammarKey), isClassKey(isClassKey) {}
 };
 
 /**
@@ -37,88 +39,48 @@ public:
 class ToSourceGenVisitor : public DescrVisitor {
 public:
     LData *langData;
-    map<string, map<string, ToSourceVisitor*>> visitors;
+    // These will contain most code to output
+    // source, additionally lists will need
+    // special logic.
+    map<string, vector<ToSourceCase*>> keys;
     ToSourceGenVisitor(LData *langData)
         : langData(langData) {}
-    /**
-     * Visitor cases are keyed on astClass,
-     * then serialized tokens.
-     * Returns a nullptr to signal
-     * the combination is already present.
-     */
-    ToSourceVisitor* getToSourceVisitor(string astClass, string serialized) {
-        if (visitors.count(astClass) == 0) {
-            visitors.emplace(astClass, map<string, ToSourceVisitor*>());
+
+    void addToKey(string key, ToSourceCase *c) {
+        if (keys.count(key) == 0) {
+            keys.emplace(key, vector<ToSourceCase*>());
         }
-        if (visitors[astClass].count(serialized) > 0) {
-            // Already present
-            // It is assumed it would give the same result
-            // with the same serialized token list.
-            // Considered "already processed"
-            return nullptr;
-        }
-        ToSourceVisitor *newVisitor = new ToSourceVisitor(astClass, langData);
-        visitors[astClass].emplace(serialized, newVisitor);
-        return newVisitor;
-    }
-    void genToSource(string baseClass, string identifier, vector<AstPart*>* parts) {
-        string defClass = baseClass;
-        // Identifier can refer to other ast node
-        if (identifier != "") {
-            TypedPart *idPart = langData->getTypedPart(identifier);
-            if (idPart != nullptr && idPart->type == PAST) {
-                // Let other ast visit handle this
-                return;
-            } else {
-                defClass = identifier;
-            }
-        }
-        ToSourceVisitor *visitor = getToSourceVisitor(defClass, langData->serializeParts(parts));
-        for (AstPart *defPart : *parts) {
-            TypedPart *part = langData->getTypedPart(defPart->identifier);
-            part->addToVisitor(visitor);
-        }
-    }
-    void generateVisitors() {
-        // Generate visitors for ast types
-        for (auto const &astType : langData->astGrammarTypes) {
-            AstGrammarType *grammar = astType.second;
-            string astClass = "";
-            for (GrammarRule *rule : grammar->rules) {
-                ToSourceVisitor *visitor = getToSourceVisitor(astClass, rule->serialized);
-                for (string token : rule->tokenList) {
-                    TypedPart *part = langData->getTypedPart(token);
-                    part->addToVisitor(visitor);
-                }
-            }
-        }
-        // Generate visitors for list types
-        for (auto const &listType : langData->listGrammarTypes) {
-            ListGrammarType *grammar = listType.second;
-            string astClass = "";
-            for (GrammarRule *rule : grammar->rules) {
-                ToSourceVisitor *visitor = getToSourceVisitor(astClass, rule->serialized);
-                for (string token : rule->tokenList) {
-                    TypedPart *part = langData->getTypedPart(token);
-                    part->addToVisitor(visitor);
-                }
-            }
-        }
+        keys[key].push_back(c);
     }
     void visitAst(AstNode *node) {
-        string baseClass = node->typeDecl->identifier;
-        for (AstDef *def : *node->nodes) {
-            genToSource(baseClass, def->identifier, def->nodes);
+        string grammarKey = langData->keyFromTypeDecl(node->typeDecl);
+        bool isClassKey = (node->typeDecl->alias == ""
+                            || node->typeDecl->alias == node->typeDecl->identifier);
+        AstGrammarType *grammar = langData->astGrammarTypes[grammarKey];
+        for (AstRuleDef *ruleDef : grammar->ruleDefs) {
+            // Generate code for each ruleDef
+            ToSourceCase *c = new ToSourceCase(langData, grammarKey, isClassKey);
+            for (TypedPart *part : ruleDef->typedPartList) {
+                part->addToVisitor(c);
+            }
+            if (isClassKey) {
+                addToKey(grammarKey, c);
+            } else {
+                addToKey(grammarKey, c);
+            }
         }
     }
     void visitList(ListNode *node) {
-        // Skip shorthand definition
-        if (node->nodes->size() == 0) {
-            return;
-        }
-        string baseClass = node->typeDecl->identifier;
-        for (ListDef *def : *node->nodes) {
-            genToSource(baseClass, def->identifier, def->nodes);
+        string grammarKey = langData->keyFromTypeDecl(node->typeDecl);
+        ListGrammarType *grammar = langData->listGrammarTypes[grammarKey];
+        for (ListRuleDef *ruleDef : grammar->ruleDefs) {
+            ToSourceCase *c = new ToSourceCase(langData, grammarKey, false);
+            if (ruleDef->astRule != nullptr) {
+                for (TypedPart *part : ruleDef->astRule->typedPartList) {
+                    part->addToVisitor(c);
+                }
+            }
+            addToKey(grammarKey, c);
         }
     }
 };

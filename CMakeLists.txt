@@ -10,6 +10,7 @@ fips_include_directories(code)
 fips_add_subdirectory(code)
 
 if (NOT FIPS_IMPORT)
+    fips_add_subdirectory(playground)
     fips_finish()
 endif()
 

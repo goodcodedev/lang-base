@@ -21,7 +21,7 @@ void TypedPartToken::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartToken::generateGrammarType(string *str, LData *langData) {
     *str += "std::string";
 }
-void TypedPartToken::addToVisitor(ToSourceVisitor *visitor) {
+void TypedPartToken::addToVisitor(ToSourceCase *visitor) {
     string regex = visitor->langData->tokenData[identifier]->regex;
     // Currently handles simple regexes
     // If the regex result is variable, it needs to
@@ -56,16 +56,16 @@ void TypedPartPrim::generateGrammarType(string *str, LData *langData) {
         *str += "UNRECOGNIZED PRIM TYPE";
     }
 }
-void TypedPartPrim::addToVisitor(ToSourceVisitor *visitor) {
+void TypedPartPrim::addToVisitor(ToSourceCase *visitor) {
     switch (type) {
         case PSTRING:
-        visitor->code += "str += node->" + getMemberKey() + ";\n";
+        visitor->code += "    str += node->" + getMemberKey() + ";\n";
         break;
         case PINT:
-        visitor->code += "str += std::to_string(node->" + getMemberKey() + ");\n";
+        visitor->code += "    str += std::to_string(node->" + getMemberKey() + ");\n";
         break;
         case PFLOAT:
-        visitor->code += "str += std::to_string(node->" + getMemberKey() + ");\n";
+        visitor->code += "    str += std::to_string(node->" + getMemberKey() + ");\n";
         break;
         default: {
             printf("Unrecognized prim type in addToVisitor\n");
@@ -80,7 +80,7 @@ void TypedPartEnum::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartEnum::generateGrammarType(string *str, LData *langData) {
     *str += enumKey;
 }
-void TypedPartEnum::addToVisitor(ToSourceVisitor *visitor) {
+void TypedPartEnum::addToVisitor(ToSourceCase *visitor) {
     visitor->code += "str += enum" + identifier + "ToString(node->" + getMemberKey() + ");\n";
 }
 
@@ -90,8 +90,12 @@ void TypedPartAst::generateGrammarVal(string *str, int num, LData *langData) {
 void TypedPartAst::generateGrammarType(string *str, LData *langData) {
     *str += astClass + "*";
 }
-void TypedPartAst::addToVisitor(ToSourceVisitor *visitor) {
-    visitor->code += "visit" + astClass + "(node->" + getMemberKey() + ");\n";
+void TypedPartAst::addToVisitor(ToSourceCase *visitor) {
+    if (visitor->isClassKey) {
+        visitor->code += "    visit" + astClass + "(node->" + getMemberKey() + ");\n";
+    } else {
+        visitor->code += "    astKey_" + visitor->grammarKey + "(node->" + getMemberKey() + ");\n";
+    }
 }
 
 void TypedPartList::generateGrammarVal(string *str, int num, LData *langData) {
@@ -104,7 +108,9 @@ void TypedPartList::generateGrammarType(string *str, LData *langData) {
     type->generateGrammarType(str, langData);
     *str += ">*";
 }
-void TypedPartList::addToVisitor(ToSourceVisitor *visitor) {
+void TypedPartList::addToVisitor(ToSourceCase *visitor) {
+    visitor->code += "    listKey_" + visitor->grammarKey + "(node->" + getMemberKey() + ");\n";
+    return;
     if (type->type == PAST) {
         TypedPartAst *astType = static_cast<TypedPartAst*>(type);
         visitor->code += "for (";

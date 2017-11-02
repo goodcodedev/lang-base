@@ -1,4 +1,5 @@
 #include "GrammarRule.hpp"
+#include "LangData.hpp"
 
 namespace LangBase {
 

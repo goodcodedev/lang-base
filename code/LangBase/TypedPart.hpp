@@ -5,7 +5,7 @@ namespace LangBase {
 
 using std::string;
 
-class ToSourceVisitor;
+class ToSourceCase;
 class LData;
 
 /**
@@ -66,7 +66,7 @@ public:
             return identifier;
         }
     }
-    virtual void addToVisitor(ToSourceVisitor *visitor) = 0;
+    virtual void addToVisitor(ToSourceCase *visitor) = 0;
 };
 
 // Token part
@@ -76,7 +76,7 @@ public:
         : TypedPart(PTOKEN, identifier) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
-    void addToVisitor(ToSourceVisitor *visitor);
+    void addToVisitor(ToSourceCase *visitor);
 };
 // Prim token part
 class TypedPartPrim : public TypedPart {
@@ -85,7 +85,7 @@ public:
         : TypedPart(type, identifier) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
-    void addToVisitor(ToSourceVisitor *visitor);
+    void addToVisitor(ToSourceCase *visitor);
 };
 // Enum part
 // These are stored as integers
@@ -96,7 +96,7 @@ public:
         : TypedPart(PENUM, identifier), enumKey(enumKey) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
-    void addToVisitor(ToSourceVisitor *visitor);
+    void addToVisitor(ToSourceCase *visitor);
 };
 // Ast part
 class TypedPartAst : public TypedPart {
@@ -106,7 +106,7 @@ public:
         : TypedPart(PAST, identifier), astClass(astClass) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
-    void addToVisitor(ToSourceVisitor *visitor);
+    void addToVisitor(ToSourceCase *visitor);
 };
 // List part
 class TypedPartList : public TypedPart {
@@ -119,6 +119,6 @@ public:
         : TypedPart(PLIST, identifier), type(type), sep(sep), sepBetween(sepBetween) {}
     void generateGrammarVal(string *str, int num, LData *langData);
     void generateGrammarType(string *str, LData *langData);
-    void addToVisitor(ToSourceVisitor *visitor);
+    void addToVisitor(ToSourceCase *visitor);
 };
 }

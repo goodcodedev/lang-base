@@ -36,13 +36,14 @@ void ListInitAction::generateGrammarVal(string *str, LData *langData) {
 void ListPushAction::generateGrammar(string *str, LData *langData) {
     // Reinterpret as list type to "vec" variable
     *str += "std::vector<";
-    type->generateGrammarType(str, langData);
+    listType->generateGrammarType(str, langData);
     *str += ">* vec = reinterpret_cast<std::vector<";
-    type->generateGrammarType(str, langData);
+    listType->generateGrammarType(str, langData);
     *str += ">*>($" + std::to_string(listNum) + ");";
     // Push back element
     *str += "vec->push_back(";
-    type->generateGrammarVal(str, elemNum, langData);
+    // Todo, split up if code needs to be run before
+    innerAction->generateGrammarVal(str, langData);
     *str += ");$$ = ";
     generateGrammarVal(str, langData);
     *str += ";";

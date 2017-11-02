@@ -28,162 +28,151 @@ public:
         }
     }
 
-    GrammarRule* generateRule(string baseAstClass, string identifier, vector<AstPart*> *parts, string sepBefore, string sepAfter) {
-        string defClass = baseAstClass;
-        // Defs may have an identifier, this would refer
-        // to a subclass of the baseClass or another ast
-        // rule. (only next rule is checked, but top level
-        // rules should have the type specified)
-        // When rules refer to args/parts
-        // that is expected in parens.
-        bool isKeyRef = false;
-        if (identifier.compare("") != 0) {
-            // Check for other ast rule
-            if (langData->astGrammarTypes.count(identifier) != 0) {
-                // Get class name from other type
-                defClass = langData->astGrammarTypes[identifier]->astClass;
-                isKeyRef = true;
-            } else {
-                // Else use identifier as class
-                defClass = identifier;
-            }
+    /**
+     * Adds tokens and wraps types action in list
+     * actions
+     * There needs to be several rules for lists
+     * When the separator is between elements,
+     * one rule is: listKey element,
+     * and another: listKey SEPARATOR element/ast tokens
+     * This method creates a particular rule,
+     * and will be passed withSep=false to exclude
+     * the separator
+     */
+    RuleAction* generateListRule(ListGrammarType *grammar, ListRuleDef *listDef, GrammarRule *rule, bool withSep) {
+        rule->tokenList.push_back(grammar->key);
+        if (withSep && listDef->sepBetween != nullptr) {
+            rule->tokenList.push_back(listDef->sepBetween->identifier);
         }
-        GrammarRule *curRule = new GrammarRule();
-        if (isKeyRef) {
+        if (listDef->astRule == nullptr) {
+            printf("List requires ast rule currently");
+            exit(1);
+        }
+        RuleAction *innerAction = generateAstRule(rule, listDef->astRule);
+        if (listDef->sepAfter != nullptr) {
+            rule->tokenList.push_back(listDef->sepAfter->identifier);
+        }
+        TypedPart *pushType;
+        switch (innerAction->type) {
+            case RARef: {
+                RefAction *refAction = static_cast<RefAction*>(innerAction);
+                pushType = refAction->ref;
+            }
+            break;
+            case RAAstConstruction: {
+                AstConstructionAction *astAction = static_cast<AstConstructionAction*>(innerAction);
+                pushType = astAction->typed;
+            }
+            break;
+            default: {
+                printf("Could not resolve type\n");
+                exit(1);
+            }
+            break;
+        }
+        ListPushAction *pushAction = new ListPushAction(1, innerAction, pushType, grammar->type);
+        pushAction->innerAction = innerAction;
+        return pushAction;
+    }
+
+    /**
+     * Create grammar rule based on ast and optionally list rule def
+     * Should probably be more composable to allow lists of lists
+     */
+    RuleAction* generateAstRule(GrammarRule *rule, AstRuleDef *ruleDef) {
+        // If this is part of a list, tokens
+        // might be added.
+        int num =  rule->tokenList.size();
+        int startNum = num;
+        if (ruleDef->refType != nullptr) {
             // Rule just need to use referred rule as part
             // which should return ast object
-            curRule->tokenList.push_back(identifier);
-            curRule->action = new RefAction(1, new TypedPartAst(
-                identifier,
-                defClass
+            rule->tokenList.push_back(ruleDef->refType->identifier);
+            ++num;
+            RefAction *refAction = new RefAction(num, new TypedPartAst(
+                ruleDef->refType->identifier,
+                ruleDef->astClass
             ));
-        } else {
-            // Collect rule args
-            vector<RuleArg> ruleArgs;
-            int num = 0;
-            vector<string> tokenList;
-            if (sepBefore != "") {
-                // Add actual token after we get
-                // serialized tokens. Separators
-                // are handled besides to allow
-                // moving ast parts to/from places
-                // where they are not combined
-                // with separators.
-                ++num;
-            }
-            for (AstPart *part : *parts) {
-                TypedPart *typedPart = langData->getTypedPart(part->identifier);
-                // Skip WS (whitespace) token as this is ignored in grammar
-                if (typedPart->type == PTOKEN && typedPart->identifier == "WS") continue;
-                ++num;
-                // Just setting alias here
-                // Used as key to ast member and constructor args
-                typedPart->alias = (part->alias != "") ? part->alias : part->identifier;
-                if (typedPart == nullptr) {
-                    printf("Key not found: %s\n", part->identifier.c_str());
-                    exit(1);
-                }
-                tokenList.push_back(typedPart->identifier);
-                if (typedPart->type == PTOKEN || typedPart == nullptr) {
-                    // Skip const literal tokens
-                    continue;
-                }
-                // Add rule arg
-                ruleArgs.push_back(RuleArg(num, typedPart));
-            }
-            curRule->serialized = langData->addSerializedTokenList(defClass, tokenList);
-            if (sepBefore != "") {
-                TypedPart *typedPart = langData->getTypedPart(sepBefore);
-                if (typedPart->type != PTOKEN) {
-                    printf("Separator must be token");
-                    exit(1);
-                }
-                tokenList.insert(tokenList.begin(), typedPart->identifier);
-                // Num alreade incremented
-            }
-            if (sepAfter != "") {
-                TypedPart *typedPart = langData->getTypedPart(sepAfter);
-                if (typedPart->type != PTOKEN) {
-                    printf("Separator must be token");
-                    exit(1);
-                }
-                tokenList.push_back(typedPart->identifier);
-                ++num;
-            }
-            curRule->tokenList = tokenList;
-            printf("Adding constr action: %s\n", defClass.c_str());
-            curRule->action = new AstConstructionAction(
-                defClass,
-                ruleArgs,
-                curRule->serialized
-            );
+            return refAction;
         }
-        return curRule;
+        // Collect rule args
+        vector<RuleArg> ruleArgs;
+        for (TypedPart *typedPart : ruleDef->typedPartList) {
+            // Skip whitespace token
+            // We use it to signal significant whitespace
+            // and don't need to add it to grammar token list
+            if (typedPart->type == PTOKEN && typedPart->identifier == "WS") continue;
+            rule->tokenList.push_back(typedPart->identifier);
+            ++num;
+            if (typedPart->type == PTOKEN) {
+                // Don't add args from literal token (there could be exceptions
+                // where it would be nice to store it. Maybe use alias to signal this)
+                continue;
+            }
+            // Add rule arg
+            ruleArgs.push_back(RuleArg(num, typedPart));
+        }
+        // Serialized without separators
+        rule->serialized = langData->addSerializedTokenList(
+            ruleDef->astClass, 
+            vector<string>(rule->tokenList.begin() + startNum, rule->tokenList.end())
+        );
+        AstConstructionAction *astAction = new AstConstructionAction(
+            ruleDef->astClass,
+            ruleArgs,
+            rule->serialized
+        );
+        astAction->typed = new TypedPartAst(ruleDef->astClass, ruleDef->astClass);
+        return astAction;
     }
 
     void visitAst(AstNode *node) {
         string grammarKey = langData->keyFromTypeDecl(node->typeDecl);
         // Get current grammar
         AstGrammarType *grammar = langData->ensureAstGrammar(grammarKey);
-        // Get ast base class
-        string baseAstClass = node->typeDecl->identifier;
-        // Go through refs and collect rules
-        for (AstDef* astDef : *node->nodes) {
-            grammar->rules.push_back(generateRule(
-                baseAstClass,
-                astDef->identifier,
-                astDef->nodes,
-                "", ""
-            ));
+        // Go through defs and collect rules
+        for (AstRuleDef* ruleDef : grammar->ruleDefs) {
+            GrammarRule *rule = new GrammarRule();
+            rule->action = generateAstRule(rule, ruleDef);
+            grammar->rules.push_back(rule);
         }
     }
     void visitList(ListNode *node) {
         string grammarKey = langData->keyFromTypeDecl(node->typeDecl);
         ListGrammarType *grammar = langData->ensureListGrammar(grammarKey);
-        if (node->nodes->size() > 0) {
-            string baseAstClass = node->typeDecl->identifier;
-            for (ListDef* listDef : *node->nodes) {
-                grammar->rules.push_back(generateRule(
-                    baseAstClass,
-                    listDef->identifier,
-                    listDef->nodes,
-                    listDef->sepBefore,
-                    listDef->sepAfter
-                ));
+        // Init list
+        // This may not be the best way
+        // as it can give ambiguous grammars
+        // Trick for now
+        // Rather initialize list in rule matching
+        // a first element. However, not sure then
+        // how to capture empty list.
+        GrammarRule *initRule = new GrammarRule();
+        initRule->action = new ListInitAction(grammar->type);
+        grammar->rules.push_back(initRule);
+        if (grammar->sepBetween) {
+            for (ListRuleDef *ruleDef : grammar->ruleDefs) {
+                // With current scheme, we need one
+                // rule without separator, and one
+                // with separator.
+                GrammarRule *rule = new GrammarRule();
+                rule->action = generateListRule(grammar, ruleDef, rule, false);
+                grammar->rules.push_back(rule);
+                GrammarRule *rule2 = new GrammarRule();
+                rule2->action = generateListRule(grammar, ruleDef, rule2, true);
+                grammar->rules.push_back(rule2);
             }
         } else {
-            TypedPart *listType = grammar->type;
-            TypedPart *sepToken = grammar->sep;
-            bool sepBetween = grammar->sepBetween;
-            // Init list
-            GrammarRule *initRule = new GrammarRule();
-            initRule->action = new ListInitAction(listType);
-            grammar->rules.push_back(initRule);
-            if (sepBetween) {
-                GrammarRule *firstPart = new GrammarRule();
-                firstPart->tokenList = vector<string>{
-                    node->typeDecl->identifier,
-                    listType->identifier
-                };
-                firstPart->action = new ListPushAction(1, 2, listType);
-                grammar->rules.push_back(firstPart);
-                GrammarRule *sepPart = new GrammarRule();
-                sepPart->tokenList = vector<string>{
-                    node->typeDecl->identifier,
-                    sepToken->identifier,
-                    listType->identifier
-                };
-                sepPart->action = new ListPushAction(1, 3, listType);
-                grammar->rules.push_back(sepPart);
-            } else {
-                GrammarRule *sepPart = new GrammarRule();
-                sepPart->tokenList = vector<string>{
-                    node->typeDecl->identifier,
-                    listType->identifier,
-                    sepToken->identifier
-                };
-                sepPart->action = new ListPushAction(1, 2, listType);
-                grammar->rules.push_back(sepPart);
+            // Sep after
+            // Rules need list accumulation and
+            // optionally specified sep after
+            for (ListRuleDef *ruleDef : grammar->ruleDefs) {
+                // With current scheme, we need one
+                // rule without separator, and one
+                // with separator.
+                GrammarRule *rule = new GrammarRule();
+                rule->action = generateListRule(grammar, ruleDef, rule, true);
+                grammar->rules.push_back(rule);
             }
         }
     }

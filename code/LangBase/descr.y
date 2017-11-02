@@ -137,6 +137,7 @@ list_defs: /* empty */ {
     | list_defs COMMA list_def { $$ = push_node<ListDef>($1, $3); }
     ;
 list_def: IDENTIFIER { $$ = new ListDef($1, new std::vector<AstPart*>); }
+        | IDENTIFIER IDENTIFIER { $$ = new ListDef($1, new std::vector<AstPart*>, $2); }
         | IDENTIFIER LEFT_PAREN ast_parts RIGHT_PAREN { 
             $$ = new ListDef($1, reinterpret_cast<std::vector<AstPart*>*>($3));
         }

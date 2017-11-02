@@ -48,6 +48,7 @@ public:
     string astClass;
     vector<RuleArg> args;
     string serialized;
+    TypedPart *typed;
     AstConstructionAction(string astClass) : RuleAction(RAAstConstruction), astClass(astClass)  {}
     AstConstructionAction(string astClass, vector<RuleArg> args)
         : RuleAction(RAAstConstruction), astClass(astClass), args(args) {}
@@ -95,9 +96,13 @@ class ListPushAction : public RuleAction {
 public:
     int listNum;
     int elemNum;
+    RuleAction *innerAction;
     TypedPart *type;
-    ListPushAction(int listNum, int elemNum, TypedPart *type)
-        : RuleAction(RAListPush), listNum(listNum), elemNum(elemNum), type(type) {}
+    TypedPart *listType;
+    ListPushAction(int listNum, int elemNum, TypedPart *type, TypedPart *listType)
+        : RuleAction(RAListPush), listNum(listNum), elemNum(elemNum), type(type), listType(listType) {}
+    ListPushAction(int listNum, RuleAction *innerAction, TypedPart *type, TypedPart *listType)
+        : RuleAction(RAListPush), listNum(listNum), innerAction(innerAction), type(type), listType(listType) {}
     void generateGrammar(string *str, LData *langData);
     void generateGrammarVal(string *str, LData *langData);
 };
